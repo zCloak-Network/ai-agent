@@ -12,20 +12,19 @@
  *   zcloak-agent doc info <file_path>                            显示文件哈希、大小、MIME 等信息
  */
 
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const {
+import fs from 'fs';
+import path from 'path';
+import {
   parseArgs,
   hashFile,
   getFileSize,
   getMimeType,
   generateManifest,
-} = require('./utils');
+} from './utils';
+import type { ParsedArgs } from './types/common';
 
 // ========== 帮助信息 ==========
-function showHelp() {
+function showHelp(): void {
   console.log('zCloak.ai 文档工具');
   console.log('');
   console.log('用法:');
@@ -50,7 +49,7 @@ function showHelp() {
  * 生成 MANIFEST.sha256（含元数据头）
  * 格式兼容 GNU sha256sum，元数据用 # 注释行表示
  */
-function cmdManifest(folderPath, args) {
+function cmdManifest(folderPath: string | undefined, args: ParsedArgs): void {
   if (!folderPath) {
     console.error('错误: 需要提供文件夹路径');
     process.exit(1);
@@ -61,7 +60,7 @@ function cmdManifest(folderPath, args) {
     process.exit(1);
   }
 
-  const version = args.version || '1.0.0';
+  const version = typeof args.version === 'string' ? args.version : '1.0.0';
 
   try {
     const result = generateManifest(folderPath, { version });
@@ -71,7 +70,7 @@ function cmdManifest(folderPath, args) {
     console.log(`MANIFEST SHA256: ${result.manifestHash}`);
     console.log(`MANIFEST 大小: ${result.manifestSize} bytes`);
   } catch (err) {
-    console.error(`生成 MANIFEST 失败: ${err.message}`);
+    console.error(`生成 MANIFEST 失败: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }
@@ -80,7 +79,7 @@ function cmdManifest(folderPath, args) {
  * 验证 MANIFEST.sha256 中的文件完整性
  * 纯 Node.js 实现，逐行解析并验证每个文件的哈希
  */
-function cmdVerifyManifest(folderPath) {
+function cmdVerifyManifest(folderPath: string | undefined): void {
   if (!folderPath) {
     console.error('错误: 需要提供文件夹路径');
     process.exit(1);
@@ -104,8 +103,8 @@ function cmdVerifyManifest(folderPath) {
     const match = line.match(/^([a-f0-9]{64})\s+(.+)$/);
     if (!match) continue;
 
-    const expectedHash = match[1];
-    const relativePath = match[2].replace(/^\.\//, '');
+    const expectedHash = match[1]!;
+    const relativePath = match[2]!.replace(/^\.\//, '');
     const fullPath = path.join(folderPath, relativePath);
 
     fileCount++;
@@ -139,7 +138,7 @@ function cmdVerifyManifest(folderPath) {
 }
 
 /** 计算单文件 SHA256 哈希 */
-function cmdHash(filePath) {
+function cmdHash(filePath: string | undefined): void {
   if (!filePath) {
     console.error('错误: 需要提供文件路径');
     process.exit(1);
@@ -155,7 +154,7 @@ function cmdHash(filePath) {
 }
 
 /** 显示文件详细信息（哈希、大小、MIME） */
-function cmdInfo(filePath) {
+function cmdInfo(filePath: string | undefined): void {
   if (!filePath) {
     console.error('错误: 需要提供文件路径');
     process.exit(1);
@@ -182,7 +181,7 @@ function cmdInfo(filePath) {
 }
 
 // ========== 主入口 ==========
-function main() {
+function main(): void {
   const args = parseArgs();
   const command = args._args[0];
 

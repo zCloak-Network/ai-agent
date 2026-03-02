@@ -10,12 +10,11 @@
  *   3. ~/.config/dfx/identity/default/identity.pem（dfx 默认位置）
  */
 
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { Ed25519KeyIdentity } = require('@dfinity/identity');
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { Ed25519KeyIdentity } from '@dfinity/identity';
+import type { Principal } from '@dfinity/principal';
 
 // ========== PEM 文件查找 ==========
 
@@ -23,7 +22,7 @@ const { Ed25519KeyIdentity } = require('@dfinity/identity');
  * dfx 默认身份 PEM 文件路径
  * macOS 和 Linux 统一: ~/.config/dfx/identity/default/identity.pem
  */
-const DEFAULT_PEM_PATH = path.join(
+export const DEFAULT_PEM_PATH: string = path.join(
   os.homedir(),
   '.config', 'dfx', 'identity', 'default', 'identity.pem'
 );
@@ -31,9 +30,9 @@ const DEFAULT_PEM_PATH = path.join(
 /**
  * 获取 PEM 文件路径
  * 按优先级查找: --identity 参数 > 环境变量 > dfx 默认位置
- * @returns {string} PEM 文件绝对路径
+ * @returns PEM 文件绝对路径
  */
-function getPemPath() {
+export function getPemPath(): string {
   // 1. 从 --identity=<path> 参数获取
   const identityArg = process.argv.find(a => a.startsWith('--identity='));
   if (identityArg) {
@@ -87,10 +86,10 @@ function getPemPath() {
  *   }
  *   总长 48 字节，私钥从 offset 16 开始，长 32 字节
  *
- * @param {string} pemContent - PEM 文件内容
- * @returns {Uint8Array} 32 字节 Ed25519 私钥
+ * @param pemContent - PEM 文件内容
+ * @returns 32 字节 Ed25519 私钥
  */
-function parsePemToSecretKey(pemContent) {
+function parsePemToSecretKey(pemContent: string): Uint8Array {
   // 移除 PEM 头尾和所有空白字符
   const base64 = pemContent
     .replace(/-----BEGIN[^-]*-----/g, '')
@@ -137,14 +136,13 @@ function parsePemToSecretKey(pemContent) {
 // ========== 身份管理 ==========
 
 /** 缓存的身份实例 */
-let _identity = null;
+let _identity: Ed25519KeyIdentity | null = null;
 
 /**
  * 加载 Ed25519 身份
  * 从 PEM 文件加载或使用缓存的实例
- * @returns {Ed25519KeyIdentity} 身份实例
  */
-function loadIdentity() {
+export function loadIdentity(): Ed25519KeyIdentity {
   if (_identity) return _identity;
 
   const pemPath = getPemPath();
@@ -158,26 +156,16 @@ function loadIdentity() {
 /**
  * 获取当前身份的 Principal ID（文本格式）
  * 替代原来的 `dfx identity get-principal`
- * @returns {string} Principal ID 文本
  */
-function getPrincipal() {
+export function getPrincipal(): string {
   const identity = loadIdentity();
   return identity.getPrincipal().toText();
 }
 
 /**
  * 获取当前身份的 Principal 对象
- * @returns {import('@dfinity/principal').Principal}
  */
-function getPrincipalObj() {
+export function getPrincipalObj(): Principal {
   const identity = loadIdentity();
   return identity.getPrincipal();
 }
-
-module.exports = {
-  loadIdentity,
-  getPrincipal,
-  getPrincipalObj,
-  getPemPath,
-  DEFAULT_PEM_PATH,
-};

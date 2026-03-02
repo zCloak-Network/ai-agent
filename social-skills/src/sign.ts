@@ -26,11 +26,9 @@
  * 所有命令支持 --identity=<pem_path> 指定身份文件。
  */
 
-'use strict';
-
-const path = require('path');
-const fs = require('fs');
-const {
+import path from 'path';
+import fs from 'fs';
+import {
   autoPoW,
   parseArgs,
   parseTags,
@@ -40,10 +38,13 @@ const {
   generateManifest,
   formatSignResult,
   formatSignEvent,
-} = require('./utils');
+} from './utils';
+import { getSignActor, getAnonymousSignActor } from './icAgent';
+import type { SignParm } from './types/sign-event';
+import type { ParsedArgs } from './types/common';
 
 // ========== 帮助信息 ==========
-function showHelp() {
+function showHelp(): void {
   console.log('zCloak.ai Agent 签名工具');
   console.log('');
   console.log('用法:');
@@ -76,13 +77,12 @@ function showHelp() {
 /**
  * 执行 agent_sign 调用
  * 自动完成 PoW 后调用签名 canister 的 agent_sign 方法
- * @param {object} signParm - SignParm variant 对象（JS 对象格式）
- * @returns {Promise<string>} 格式化后的结果
+ * @param signParm - SignParm variant 对象（JS 对象格式）
+ * @returns 格式化后的结果
  */
-async function callAgentSign(signParm) {
+async function callAgentSign(signParm: SignParm): Promise<string> {
   const pow = await autoPoW();
 
-  const { getSignActor } = require('./icAgent');
   const actor = await getSignActor();
 
   // agent_sign(SignParm, Text_nonce)
@@ -93,7 +93,7 @@ async function callAgentSign(signParm) {
 // ========== Kind 1: 身份档案 ==========
 
 /** 设置 AI agent 身份档案 */
-async function cmdProfile(contentJson) {
+async function cmdProfile(contentJson: string | undefined): Promise<void> {
   if (!contentJson) {
     console.error('错误: 需要提供 JSON 格式的档案内容');
     console.error('示例: zcloak-agent sign profile \'{"public":{"name":"My Agent","type":"ai_agent","bio":"Description"}}\'');
@@ -103,13 +103,13 @@ async function cmdProfile(contentJson) {
   // 验证 JSON 格式
   try {
     JSON.parse(contentJson);
-  } catch (e) {
+  } catch {
     console.error('错误: 无效的 JSON 格式');
     process.exit(1);
   }
 
   // 构建 SignParm variant — SDK 直接传 JS 对象
-  const signParm = {
+  const signParm: SignParm = {
     Kind1IdentityProfile: { content: contentJson },
   };
   const result = await callAgentSign(signParm);
@@ -117,18 +117,17 @@ async function cmdProfile(contentJson) {
 }
 
 /** 查询 Kind 1 档案 */
-async function cmdGetProfile(principal) {
+async function cmdGetProfile(principal: string | undefined): Promise<void> {
   if (!principal) {
     console.error('错误: 需要提供 principal ID');
     process.exit(1);
   }
 
-  const { getAnonymousSignActor } = require('./icAgent');
   const actor = await getAnonymousSignActor();
   const result = await actor.get_kind1_event_by_principal(principal);
 
   if (result && result.length > 0) {
-    console.log(`(opt ${formatSignEvent(result[0])})`);
+    console.log(`(opt ${formatSignEvent(result[0]!)})`);
   } else {
     console.log('(null)');
   }
@@ -137,7 +136,7 @@ async function cmdGetProfile(principal) {
 // ========== Kind 3: 简单协议 ==========
 
 /** 签署简单协议 */
-async function cmdAgreement(content, args) {
+async function cmdAgreement(content: string | undefined, args: ParsedArgs): Promise<void> {
   if (!content) {
     console.error('错误: 需要提供协议内容');
     process.exit(1);
@@ -145,7 +144,7 @@ async function cmdAgreement(content, args) {
 
   const tags = parseTags(args.tags);
   // SDK 中 opt tags: 有标签时 [[...]]，无标签时 []
-  const signParm = {
+  const signParm: SignParm = {
     Kind3SimpleAgreement: {
       content,
       tags: tags.length > 0 ? [tags] : [],
@@ -158,17 +157,17 @@ async function cmdAgreement(content, args) {
 // ========== Kind 4: 社交帖子 ==========
 
 /** 发布社交帖子 */
-async function cmdPost(content, args) {
+async function cmdPost(content: string | undefined, args: ParsedArgs): Promise<void> {
   if (!content) {
     console.error('错误: 需要提供帖子内容');
     process.exit(1);
   }
 
   // 构建 tags 数组
-  const tags = [];
+  const tags: string[][] = [];
 
   // 添加 sub（子频道）
-  if (args.sub) {
+  if (typeof args.sub === 'string') {
     tags.push(['sub', args.sub]);
   }
 
@@ -178,14 +177,14 @@ async function cmdPost(content, args) {
   }
 
   // 添加 mentions
-  if (args.mentions) {
+  if (typeof args.mentions === 'string') {
     const mentionIds = args.mentions.split(',');
     for (const id of mentionIds) {
       tags.push(['m', id.trim()]);
     }
   }
 
-  const signParm = {
+  const signParm: SignParm = {
     Kind4PublicPost: {
       content,
       tags: tags.length > 0 ? [tags] : [],
@@ -198,18 +197,18 @@ async function cmdPost(content, args) {
 // ========== Kind 6: 互动 ==========
 
 /** 点赞/踩/回复 */
-async function cmdInteraction(eventId, reaction, content) {
+async function cmdInteraction(eventId: string | undefined, reaction: string, content: string | undefined): Promise<void> {
   if (!eventId) {
     console.error('错误: 需要提供目标 event ID');
     process.exit(1);
   }
 
-  const tags = [
+  const tags: string[][] = [
     ['e', eventId],
     ['reaction', reaction],
   ];
 
-  const signParm = {
+  const signParm: SignParm = {
     Kind6Interaction: {
       content: content || '',
       tags: [tags],
@@ -222,7 +221,7 @@ async function cmdInteraction(eventId, reaction, content) {
 // ========== Kind 7: 联系人列表 ==========
 
 /** 关注 agent */
-async function cmdFollow(aiId, displayName) {
+async function cmdFollow(aiId: string | undefined, displayName: string | undefined): Promise<void> {
   if (!aiId) {
     console.error('错误: 需要提供要关注的 agent ID');
     console.error('用法: zcloak-agent sign follow <ai_id> <display_name>');
@@ -230,11 +229,11 @@ async function cmdFollow(aiId, displayName) {
   }
 
   // Kind7 的 tags 是 4 元素数组: [key, id, relay, displayName]
-  const tags = [
+  const tags: string[][] = [
     ['p', aiId, '', displayName || ''],
   ];
 
-  const signParm = {
+  const signParm: SignParm = {
     Kind7ContactList: {
       tags: [tags],
     },
@@ -246,7 +245,7 @@ async function cmdFollow(aiId, displayName) {
 // ========== Kind 11: 文档签名 ==========
 
 /** 签名单文件 */
-async function cmdSignFile(filePath, args) {
+async function cmdSignFile(filePath: string | undefined, args: ParsedArgs): Promise<void> {
   if (!filePath) {
     console.error('错误: 需要提供文件路径');
     process.exit(1);
@@ -268,7 +267,7 @@ async function cmdSignFile(filePath, args) {
   console.error(`大小: ${fileSize} bytes`);
 
   // 构建 content JSON
-  const url = args.url || '';
+  const url = typeof args.url === 'string' ? args.url : '';
   const contentObj = {
     title: fileName,
     hash: fileHash,
@@ -279,9 +278,10 @@ async function cmdSignFile(filePath, args) {
   const contentJson = JSON.stringify(contentObj);
 
   // 构建 tags
-  const tags = parseTags(args.tags || 't:document');
+  const tagsStr = args.tags || 't:document';
+  const tags = parseTags(tagsStr);
 
-  const signParm = {
+  const signParm: SignParm = {
     Kind11DocumentSignature: {
       content: contentJson,
       tags: tags.length > 0 ? [tags] : [],
@@ -292,7 +292,7 @@ async function cmdSignFile(filePath, args) {
 }
 
 /** 签名文件夹（通过 MANIFEST.sha256） */
-async function cmdSignFolder(folderPath, args) {
+async function cmdSignFolder(folderPath: string | undefined, args: ParsedArgs): Promise<void> {
   if (!folderPath) {
     console.error('错误: 需要提供文件夹路径');
     process.exit(1);
@@ -307,9 +307,10 @@ async function cmdSignFolder(folderPath, args) {
   console.error('正在生成 MANIFEST.sha256...');
   let manifest;
   try {
-    manifest = generateManifest(folderPath, { version: args.version });
+    const version = typeof args.version === 'string' ? args.version : undefined;
+    manifest = generateManifest(folderPath, { version });
   } catch (err) {
-    console.error(`生成 MANIFEST.sha256 失败: ${err.message}`);
+    console.error(`生成 MANIFEST.sha256 失败: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 
@@ -318,7 +319,7 @@ async function cmdSignFolder(folderPath, args) {
   console.error(`MANIFEST 大小: ${manifestSize} bytes`);
 
   // 构建 content JSON
-  const url = args.url || '';
+  const url = typeof args.url === 'string' ? args.url : '';
   const contentObj = {
     title: 'MANIFEST.sha256',
     hash: manifestHash,
@@ -329,9 +330,10 @@ async function cmdSignFolder(folderPath, args) {
   const contentJson = JSON.stringify(contentObj);
 
   // 构建 tags
-  const tags = parseTags(args.tags || 't:skill');
+  const tagsStr = args.tags || 't:skill';
+  const tags = parseTags(tagsStr);
 
-  const signParm = {
+  const signParm: SignParm = {
     Kind11DocumentSignature: {
       content: contentJson,
       tags: tags.length > 0 ? [tags] : [],
@@ -342,7 +344,7 @@ async function cmdSignFolder(folderPath, args) {
 }
 
 // ========== 主入口 ==========
-async function main() {
+async function main(): Promise<void> {
   const args = parseArgs();
   const command = args._args[0];
 
@@ -383,7 +385,7 @@ async function main() {
         break;
     }
   } catch (err) {
-    console.error(`操作失败: ${err.message}`);
+    console.error(`操作失败: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

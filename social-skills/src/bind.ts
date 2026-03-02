@@ -13,16 +13,12 @@
  * 所有命令支持 --identity=<pem_path> 指定身份文件。
  */
 
-'use strict';
-
-const {
-  getEnv,
-  parseArgs,
-} = require('./utils');
-const config = require('./config');
+import { getEnv, parseArgs } from './utils';
+import config from './config';
+import { getRegistryActor } from './icAgent';
 
 // ========== 帮助信息 ==========
-function showHelp() {
+function showHelp(): void {
   console.log('zCloak.ai Agent-Owner 绑定工具');
   console.log('');
   console.log('用法:');
@@ -44,7 +40,7 @@ function showHelp() {
 // ========== 命令实现 ==========
 
 /** 准备绑定并生成认证 URL */
-async function cmdPrepare(userPrincipal) {
+async function cmdPrepare(userPrincipal: string | undefined): Promise<void> {
   if (!userPrincipal) {
     console.error('错误: 需要提供 user principal ID');
     console.error('用法: zcloak-agent bind prepare <user_principal>');
@@ -56,7 +52,6 @@ async function cmdPrepare(userPrincipal) {
 
   // Step 1: 调用 agent_prepare_bond（需要身份，update call）
   console.error('正在调用 agent_prepare_bond...');
-  const { getRegistryActor } = require('./icAgent');
   const actor = await getRegistryActor();
   const result = await actor.agent_prepare_bond(userPrincipal);
 
@@ -82,7 +77,7 @@ async function cmdPrepare(userPrincipal) {
 }
 
 // ========== 主入口 ==========
-async function main() {
+async function main(): Promise<void> {
   const args = parseArgs();
   const command = args._args[0];
 
@@ -96,7 +91,7 @@ async function main() {
         break;
     }
   } catch (err) {
-    console.error(`操作失败: ${err.message}`);
+    console.error(`操作失败: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

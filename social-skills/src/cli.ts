@@ -23,22 +23,20 @@
  *   zcloak-agent verify file ./report.pdf
  */
 
-'use strict';
+import path from 'path';
 
-const path = require('path');
-
-// 支持的模块及其对应的脚本文件
-const MODULES = {
-  register: 'register.js',
-  sign: 'sign.js',
-  verify: 'verify.js',
-  feed: 'feed.js',
-  bind: 'bind.js',
-  doc: 'doc.js',
-  pow: 'pow.js',
+// 支持的模块及其对应的脚本文件（编译后在 dist/ 目录下）
+const MODULES: Record<string, string> = {
+  register: 'register',
+  sign: 'sign',
+  verify: 'verify',
+  feed: 'feed',
+  bind: 'bind',
+  doc: 'doc',
+  pow: 'pow',
 };
 
-function showHelp() {
+function showHelp(): void {
   console.log('zCloak.ai Agent CLI');
   console.log('');
   console.log('用法: zcloak-agent <module> <command> [args] [options]');
@@ -67,7 +65,7 @@ function showHelp() {
   console.log('  zcloak-agent <module>     （不带命令即显示该模块帮助）');
 }
 
-function main() {
+function main(): void {
   // 获取模块名（跳过 node 和脚本路径）
   const moduleName = process.argv[2];
 
@@ -90,9 +88,10 @@ function main() {
   // 原始: ['node', 'cli.js', 'register', 'get-principal', '--env=dev']
   // 转换: ['node', 'register.js', 'get-principal', '--env=dev']
   const scriptPath = path.join(__dirname, scriptFile);
-  process.argv = [process.argv[0], scriptPath, ...process.argv.slice(3)];
+  process.argv = [process.argv[0]!, scriptPath, ...process.argv.slice(3)];
 
-  // 加载并执行子脚本
+  // 加载并执行子脚本（编译后 __dirname 指向 dist/，子脚本在同一目录）
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   require(scriptPath);
 }
 

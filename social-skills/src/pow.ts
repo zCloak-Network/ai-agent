@@ -3,7 +3,7 @@
  * zCloak.ai PoW 计算工具
  *
  * 找到一个 nonce 使得 sha256(base + nonce) 以指定数量的前导零开头。
- * 可作为独立脚本使用，也被其他脚本通过 utils.js 的 computePow/autoPoW 内部调用。
+ * 可作为独立脚本使用，也被其他脚本通过 utils.ts 的 computePow/autoPoW 内部调用。
  *
  * 用法:
  *   zcloak-agent pow <base_string> <zeros>
@@ -12,12 +12,10 @@
  *   zcloak-agent pow 185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969 5
  */
 
-'use strict';
-
-const crypto = require('crypto');
+import crypto from 'crypto';
 
 // ========== 主入口 ==========
-function main() {
+function main(): void {
   const base = process.argv[2];
   const zeros = parseInt(process.argv[3] || '5', 10);
 

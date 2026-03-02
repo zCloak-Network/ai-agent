@@ -4,23 +4,22 @@
   "description": "zCloak.ai Agent CLI — sign, verify, register and interact with ICP canisters via @dfinity JS SDK",
   "license": "MIT",
   "bin": {
-    "zcloak-agent": "./cli.js"
+    "zcloak-agent": "./dist/cli.js"
   },
+  "main": "./dist/utils.js",
+  "types": "./dist/utils.d.ts",
   "files": [
-    "cli.js",
-    "config.js",
-    "icAgent.js",
-    "identity.js",
-    "idl.js",
-    "utils.js",
-    "pow.js",
-    "register.js",
-    "sign.js",
-    "verify.js",
-    "bind.js",
-    "feed.js",
-    "doc.js"
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.js.map"
   ],
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
   "keywords": [
     "zcloak",
     "icp",
@@ -35,5 +34,9 @@
     "@dfinity/candid": "^3.4.3",
     "@dfinity/identity": "^3.4.3",
     "@dfinity/principal": "^3.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.3",
+    "typescript": "^5.9.3"
   }
 }

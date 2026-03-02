@@ -15,21 +15,21 @@
  * 所有命令支持 --env=dev 切换环境。
  */
 
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const {
+import fs from 'fs';
+import path from 'path';
+import {
   getEnv,
   parseArgs,
   hashFile,
   formatSignEvent,
   formatSignEvents,
-} = require('./utils');
-const config = require('./config');
+} from './utils';
+import config from './config';
+import { getAnonymousSignActor, getAnonymousRegistryActor } from './icAgent';
+import type { SignEvent } from './types/sign-event';
 
 // ========== 帮助信息 ==========
-function showHelp() {
+function showHelp(): void {
   console.log('zCloak.ai 验证工具');
   console.log('');
   console.log('用法:');
@@ -50,14 +50,13 @@ function showHelp() {
 /**
  * 从验证结果中提取 ai_id 列表并解析 agent name
  * 输出签名者信息和 profile URL
- * @param {object[]} events - SignEvent 对象数组
  */
-async function resolveSigners(events) {
+async function resolveSigners(events: SignEvent[]): Promise<void> {
   const env = getEnv();
   const profileBase = config.profile_url[env];
 
   // 提取所有唯一的 ai_id
-  const aiIds = new Set();
+  const aiIds = new Set<string>();
   for (const event of events) {
     if (event.ai_id) {
       aiIds.add(event.ai_id);
@@ -69,7 +68,6 @@ async function resolveSigners(events) {
     return;
   }
 
-  const { getAnonymousRegistryActor } = require('./icAgent');
   const actor = await getAnonymousRegistryActor();
 
   console.log('\n--- 签名者信息 ---');
@@ -81,7 +79,7 @@ async function resolveSigners(events) {
       const nameResult = await actor.get_username_by_principal(aiId);
 
       if (nameResult && nameResult.length > 0) {
-        const username = nameResult[0];
+        const username = nameResult[0]!;
         console.log(`Agent Name: ${username}`);
         console.log(`Profile URL: ${profileBase}${encodeURIComponent(username)}`);
       } else {
@@ -96,13 +94,12 @@ async function resolveSigners(events) {
 // ========== 命令实现 ==========
 
 /** 验证消息内容 */
-async function cmdVerifyMessage(content) {
+async function cmdVerifyMessage(content: string | undefined): Promise<void> {
   if (!content) {
     console.error('错误: 需要提供消息内容');
     process.exit(1);
   }
 
-  const { getAnonymousSignActor } = require('./icAgent');
   const actor = await getAnonymousSignActor();
   const events = await actor.verify_message(content);
 
@@ -111,7 +108,7 @@ async function cmdVerifyMessage(content) {
 }
 
 /** 验证单文件签名 */
-async function cmdVerifyFile(filePath) {
+async function cmdVerifyFile(filePath: string | undefined): Promise<void> {
   if (!filePath) {
     console.error('错误: 需要提供文件路径');
     process.exit(1);
@@ -129,7 +126,6 @@ async function cmdVerifyFile(filePath) {
   console.log('');
 
   // 链上验证
-  const { getAnonymousSignActor } = require('./icAgent');
   const actor = await getAnonymousSignActor();
   const events = await actor.verify_file_hash(fileHash);
 
@@ -138,7 +134,7 @@ async function cmdVerifyFile(filePath) {
 }
 
 /** 验证文件夹签名（MANIFEST.sha256） */
-async function cmdVerifyFolder(folderPath) {
+async function cmdVerifyFolder(folderPath: string | undefined): Promise<void> {
   if (!folderPath) {
     console.error('错误: 需要提供文件夹路径');
     process.exit(1);
@@ -168,8 +164,8 @@ async function cmdVerifyFolder(folderPath) {
     const match = line.match(/^([a-f0-9]{64})\s+(.+)$/);
     if (!match) continue;
 
-    const expectedHash = match[1];
-    const relativePath = match[2].replace(/^\.\//, ''); // 移除前导 ./
+    const expectedHash = match[1]!;
+    const relativePath = match[2]!.replace(/^\.\//, ''); // 移除前导 ./
     const fullPath = path.join(folderPath, relativePath);
 
     if (!fs.existsSync(fullPath)) {
@@ -198,7 +194,6 @@ async function cmdVerifyFolder(folderPath) {
   const manifestHash = hashFile(manifestPath);
   console.log(`MANIFEST SHA256: ${manifestHash}`);
 
-  const { getAnonymousSignActor } = require('./icAgent');
   const actor = await getAnonymousSignActor();
   const events = await actor.verify_file_hash(manifestHash);
 
@@ -207,26 +202,25 @@ async function cmdVerifyFolder(folderPath) {
 }
 
 /** 查询 Kind 1 身份档案 */
-async function cmdVerifyProfile(principal) {
+async function cmdVerifyProfile(principal: string | undefined): Promise<void> {
   if (!principal) {
     console.error('错误: 需要提供 principal ID');
     process.exit(1);
   }
 
-  const { getAnonymousSignActor } = require('./icAgent');
   const actor = await getAnonymousSignActor();
   const result = await actor.get_kind1_event_by_principal(principal);
 
   // opt SignEvent → 格式化输出
   if (result && result.length > 0) {
-    console.log(`(opt ${formatSignEvent(result[0])})`);
+    console.log(`(opt ${formatSignEvent(result[0]!)})`);
   } else {
     console.log('(null)');
   }
 }
 
 // ========== 主入口 ==========
-async function main() {
+async function main(): Promise<void> {
   const args = parseArgs();
   const command = args._args[0];
 
@@ -249,7 +243,7 @@ async function main() {
         break;
     }
   } catch (err) {
-    console.error(`操作失败: ${err.message}`);
+    console.error(`操作失败: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

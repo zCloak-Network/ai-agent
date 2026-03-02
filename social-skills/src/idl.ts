@@ -10,7 +10,7 @@
  * - 补全了 registry canister 的全部方法
  */
 
-'use strict';
+import { IDL } from '@dfinity/candid';
 
 // ========== 签名 Canister IDL ==========
 
@@ -20,7 +20,7 @@
  *   prod: jayj5-xyaaa-aaaam-qfinq-cai
  *   dev:  zpbbm-piaaa-aaaaj-a3dsq-cai
  */
-const signIdlFactory = ({ IDL }) => {
+export const signIdlFactory: IDL.InterfaceFactory = ({ IDL }) => {
   // SignEvent 记录类型 — canister 返回的签名事件
   const SignEvent = IDL.Record({
     counter: IDL.Opt(IDL.Nat32),          // 全局自增计数器
@@ -195,7 +195,7 @@ const signIdlFactory = ({ IDL }) => {
  * 注意: UserProfile 结构根据 skill.md 返回示例推导，
  * 字段可能不完整，后续可按实际返回值补充。
  */
-const registryIdlFactory = ({ IDL }) => {
+export const registryIdlFactory: IDL.InterfaceFactory = ({ IDL }) => {
   // UserProfile 中的 position 记录
   const Position = IDL.Record({
     is_human: IDL.Bool,
@@ -266,9 +266,4 @@ const registryIdlFactory = ({ IDL }) => {
       []
     ),
   });
-};
-
-module.exports = {
-  signIdlFactory,
-  registryIdlFactory,
 };
