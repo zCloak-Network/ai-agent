@@ -49,3 +49,21 @@ export interface ManifestResult {
   /** Number of files included */
   fileCount: number;
 }
+
+/** Single file entry parsed from a MANIFEST.sha256 file */
+export interface ManifestEntry {
+  /** Expected SHA256 hash (64-character hex string) */
+  expectedHash: string;
+  /** File relative path (leading ./ removed) */
+  relativePath: string;
+}
+
+/** Verification result for a single file in a MANIFEST */
+export interface ManifestVerifyResult {
+  /** File relative path */
+  relativePath: string;
+  /** Whether the file passed verification */
+  passed: boolean;
+  /** Failure reason (only present when passed=false) */
+  reason?: 'not_found' | 'hash_mismatch';
+}

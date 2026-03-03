@@ -13,11 +13,21 @@
  */
 
 import crypto from 'crypto';
+import { Session } from './session';
 
-// ========== Main Entry ==========
-function main(): void {
-  const base = process.argv[2];
-  const zeros = parseInt(process.argv[3] || '5', 10);
+// ========== Exported run() — called by cli.ts ==========
+
+/**
+ * Entry point when invoked via cli.ts.
+ * Receives a Session instance with pre-parsed arguments.
+ *
+ * Arguments are read from session.args._args:
+ *   _args[0] = base_string
+ *   _args[1] = zeros (default: 5)
+ */
+export function run(session: Session): void {
+  const base = session.args._args[0];
+  const zeros = parseInt(session.args._args[1] || '5', 10);
 
   if (!base) {
     console.log('zCloak.ai PoW Computation Tool');
@@ -65,4 +75,9 @@ function main(): void {
   }
 }
 
-main();
+// ========== Standalone Execution Guard ==========
+
+if (require.main === module) {
+  const session = new Session(process.argv);
+  run(session);
+}

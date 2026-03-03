@@ -18,14 +18,12 @@
 import fs from 'fs';
 import path from 'path';
 import {
-  getEnv,
-  parseArgs,
   hashFile,
+  verifyManifestEntries,
   formatSignEvent,
   formatSignEvents,
 } from './utils';
-import config from './config';
-import { getAnonymousSignActor, getAnonymousRegistryActor } from './icAgent';
+import { Session } from './session';
 import type { SignEvent } from './types/sign-event';
 
 // ========== Help Information ==========
@@ -51,9 +49,8 @@ function showHelp(): void {
  * Extract ai_id list from verification results and resolve agent names
  * Output signer information and profile URL
  */
-async function resolveSigners(events: SignEvent[]): Promise<void> {
-  const env = getEnv();
-  const profileBase = config.profile_url[env];
+async function resolveSigners(session: Session, events: SignEvent[]): Promise<void> {
+  const profileBase = session.getProfileUrl();
 
   // Extract all unique ai_ids
   const aiIds = new Set<string>();
@@ -68,7 +65,7 @@ async function resolveSigners(events: SignEvent[]): Promise<void> {
     return;
   }
 
-  const actor = await getAnonymousRegistryActor();
+  const actor = await session.getAnonymousRegistryActor();
 
   console.log('\n--- Signer Information ---');
   for (const aiId of aiIds) {
@@ -94,21 +91,21 @@ async function resolveSigners(events: SignEvent[]): Promise<void> {
 // ========== Command Implementations ==========
 
 /** Verify message content */
-async function cmdVerifyMessage(content: string | undefined): Promise<void> {
+async function cmdVerifyMessage(session: Session, content: string | undefined): Promise<void> {
   if (!content) {
     console.error('Error: message content is required');
     process.exit(1);
   }
 
-  const actor = await getAnonymousSignActor();
+  const actor = await session.getAnonymousSignActor();
   const events = await actor.verify_message(content);
 
   console.log(formatSignEvents(events));
-  await resolveSigners(events);
+  await resolveSigners(session, events);
 }
 
 /** Verify single file signature */
-async function cmdVerifyFile(filePath: string | undefined): Promise<void> {
+async function cmdVerifyFile(session: Session, filePath: string | undefined): Promise<void> {
   if (!filePath) {
     console.error('Error: file path is required');
     process.exit(1);
@@ -126,15 +123,15 @@ async function cmdVerifyFile(filePath: string | undefined): Promise<void> {
   console.log('');
 
   // On-chain verification
-  const actor = await getAnonymousSignActor();
+  const actor = await session.getAnonymousSignActor();
   const events = await actor.verify_file_hash(fileHash);
 
   console.log(formatSignEvents(events));
-  await resolveSigners(events);
+  await resolveSigners(session, events);
 }
 
 /** Verify folder signature (MANIFEST.sha256) */
-async function cmdVerifyFolder(folderPath: string | undefined): Promise<void> {
+async function cmdVerifyFolder(session: Session, folderPath: string | undefined): Promise<void> {
   if (!folderPath) {
     console.error('Error: folder path is required');
     process.exit(1);
@@ -151,36 +148,18 @@ async function cmdVerifyFolder(folderPath: string | undefined): Promise<void> {
     process.exit(1);
   }
 
-  // Step 1: Local file integrity verification (pure Node.js implementation)
+  // Step 1: Local file integrity verification using shared MANIFEST parser
   console.log('=== Step 1: Local File Integrity Verification ===');
   const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
+  const results = verifyManifestEntries(manifestContent, folderPath);
+
   let allPassed = true;
-
-  for (const rawLine of manifestContent.split('\n')) {
-    // Trim trailing \r so that CRLF line endings (Windows) don't corrupt file paths
-    const line = rawLine.trimEnd();
-    // Skip comment lines and empty lines
-    if (!line || line.startsWith('#')) continue;
-
-    // Parse format: <hash>  ./<relative_path>  or  <hash>  <relative_path>
-    const match = line.match(/^([a-f0-9]{64})\s+(.+)$/);
-    if (!match) continue;
-
-    const expectedHash = match[1]!;
-    const relativePath = match[2]!.replace(/^\.\//, ''); // Remove leading ./
-    const fullPath = path.join(folderPath, relativePath);
-
-    if (!fs.existsSync(fullPath)) {
-      console.log(`FAILED: ${relativePath} (file not found)`);
-      allPassed = false;
-      continue;
-    }
-
-    const actualHash = hashFile(fullPath);
-    if (actualHash === expectedHash) {
-      console.log(`OK: ${relativePath}`);
+  for (const r of results) {
+    if (r.passed) {
+      console.log(`OK: ${r.relativePath}`);
     } else {
-      console.log(`FAILED: ${relativePath}`);
+      const suffix = r.reason === 'not_found' ? ' (file not found)' : '';
+      console.log(`FAILED: ${r.relativePath}${suffix}`);
       allPassed = false;
     }
   }
@@ -196,21 +175,21 @@ async function cmdVerifyFolder(folderPath: string | undefined): Promise<void> {
   const manifestHash = hashFile(manifestPath);
   console.log(`MANIFEST SHA256: ${manifestHash}`);
 
-  const actor = await getAnonymousSignActor();
+  const actor = await session.getAnonymousSignActor();
   const events = await actor.verify_file_hash(manifestHash);
 
   console.log(formatSignEvents(events));
-  await resolveSigners(events);
+  await resolveSigners(session, events);
 }
 
 /** Query Kind 1 identity profile */
-async function cmdVerifyProfile(principal: string | undefined): Promise<void> {
+async function cmdVerifyProfile(session: Session, principal: string | undefined): Promise<void> {
   if (!principal) {
     console.error('Error: principal ID is required');
     process.exit(1);
   }
 
-  const actor = await getAnonymousSignActor();
+  const actor = await session.getAnonymousSignActor();
   const result = await actor.get_kind1_event_by_principal(principal);
 
   // opt SignEvent → formatted output
@@ -221,24 +200,28 @@ async function cmdVerifyProfile(principal: string | undefined): Promise<void> {
   }
 }
 
-// ========== Main Entry ==========
-async function main(): Promise<void> {
-  const args = parseArgs();
-  const command = args._args[0];
+// ========== Exported run() — called by cli.ts ==========
+
+/**
+ * Entry point when invoked via cli.ts.
+ * Receives a Session instance with pre-parsed arguments.
+ */
+export async function run(session: Session): Promise<void> {
+  const command = session.args._args[0];
 
   try {
     switch (command) {
       case 'message':
-        await cmdVerifyMessage(args._args[1]);
+        await cmdVerifyMessage(session, session.args._args[1]);
         break;
       case 'file':
-        await cmdVerifyFile(args._args[1]);
+        await cmdVerifyFile(session, session.args._args[1]);
         break;
       case 'folder':
-        await cmdVerifyFolder(args._args[1]);
+        await cmdVerifyFolder(session, session.args._args[1]);
         break;
       case 'profile':
-        await cmdVerifyProfile(args._args[1]);
+        await cmdVerifyProfile(session, session.args._args[1]);
         break;
       default:
         showHelp();
@@ -250,4 +233,9 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// ========== Standalone Execution Guard ==========
+
+if (require.main === module) {
+  const session = new Session(process.argv);
+  run(session);
+}

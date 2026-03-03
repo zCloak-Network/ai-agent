@@ -13,8 +13,8 @@ import path from 'path';
 import crypto from 'crypto';
 import config, { getEnv, getCanisterIds, getEnvLabel } from './config';
 import { getSignActor } from './icAgent';
-import { getPrincipalObj, resolvePemPath, loadIdentityFromPath } from './identity';
-import type { ParsedArgs, PowResult, AutoPowResult, ManifestOptions, ManifestResult } from './types/common';
+import { getPrincipalObj, getPemPath, loadIdentityFromPath } from './identity';
+import type { ParsedArgs, PowResult, AutoPowResult, ManifestOptions, ManifestResult, ManifestEntry, ManifestVerifyResult } from './types/common';
 import type { SignEvent, SignResult } from './types/sign-event';
 
 // ========== Re-export environment management functions (backward compatibility) ==========
@@ -49,6 +49,9 @@ export function computePow(base: string, zeros?: number): PowResult {
  * Automatically fetch PoW base and compute nonce
  * Complete PoW flow: fetch base → compute nonce
  * Uses @dfinity SDK Actor to call canister directly
+ *
+ * @deprecated Uses global state via icAgent.ts and identity.ts module-level caches.
+ * Use Session.autoPoW() instead for per-invocation state management.
  */
 export async function autoPoW(): Promise<AutoPowResult> {
   const principal = getPrincipalObj();
@@ -63,8 +66,7 @@ export async function autoPoW(): Promise<AutoPowResult> {
   // computed as sha256("" + nonce). Only reject if the return value is not a string
   // at all (which would indicate an unexpected canister response).
   if (typeof base !== 'string') {
-    console.error(`Failed to fetch PoW base: unexpected value ${JSON.stringify(base)}`);
-    process.exit(1);
+    throw new Error(`Failed to fetch PoW base: unexpected value ${JSON.stringify(base)}`);
   }
 
   // Compute PoW nonce
@@ -78,16 +80,22 @@ export async function autoPoW(): Promise<AutoPowResult> {
 // ========== Command Line Arguments ==========
 
 /**
- * Parse command line arguments into a structured object
- * Supports both --key=value and --flag formats
- * Positional arguments (not starting with --) are placed in _args array in order
+ * Parse command line arguments into a structured object.
+ * Supports both --key=value and --flag formats.
+ * Positional arguments (not starting with --) are placed in _args array in order.
+ *
+ * When called with an explicit argv array, uses that instead of process.argv.
+ * The first two elements (node path and script path) are always skipped,
+ * matching the process.argv convention.
+ *
+ * @param argv - Optional explicit argument array (defaults to process.argv)
  */
-export function parseArgs(): ParsedArgs {
+export function parseArgs(argv?: string[]): ParsedArgs {
   const result: ParsedArgs = { _args: [] };
-  // Skip node and script path
-  const argv = process.argv.slice(2);
+  // Skip node and script path (first 2 elements)
+  const effectiveArgv = (argv ?? process.argv).slice(2);
 
-  for (const arg of argv) {
+  for (const arg of effectiveArgv) {
     if (arg.startsWith('--')) {
       const eqIdx = arg.indexOf('=');
       if (eqIdx > 0) {
@@ -111,8 +119,7 @@ export function parseTags(tagsStr: string | boolean | string[] | undefined): str
   return tagsStr.split(',').map(pair => {
     const parts = pair.split(':');
     if (parts.length < 2) {
-      console.error(`Invalid tag format: "${pair}", expected key:value`);
-      process.exit(1);
+      throw new Error(`Invalid tag format: "${pair}", expected key:value`);
     }
     return [parts[0]!, parts.slice(1).join(':')];
   });
@@ -124,27 +131,30 @@ export function parseTags(tagsStr: string | boolean | string[] | undefined): str
  * Compute SHA256 hash of a file (pure Node.js implementation, no shell dependency)
  * @param filePath - File path
  * @returns 64-character hex hash value
+ * @throws {Error} If the file cannot be read
  */
 export function hashFile(filePath: string): string {
   try {
     const content = fs.readFileSync(filePath);
     return crypto.createHash('sha256').update(content).digest('hex');
   } catch (err) {
-    console.error(`Failed to compute file hash: ${filePath}`);
-    console.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
+    throw new Error(
+      `Failed to compute file hash: ${filePath}: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 }
 
 /**
  * Get file size (bytes)
+ * @throws {Error} If the file cannot be stat'd
  */
 export function getFileSize(filePath: string): number {
   try {
     return fs.statSync(filePath).size;
   } catch (err) {
-    console.error(`Failed to get file size: ${filePath}`);
-    process.exit(1);
+    throw new Error(
+      `Failed to get file size: ${filePath}: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 }
 
@@ -223,18 +233,13 @@ export function generateManifest(folderPath: string, options?: ManifestOptions):
   const manifestPath = path.join(folderPath, 'MANIFEST.sha256');
 
   // Get author (current principal, if a PEM file is available).
-  // IMPORTANT: getPrincipal() calls process.exit() when no PEM is found,
-  // and process.exit() cannot be caught by try-catch in Node.js.
-  // We therefore use resolvePemPath() first — it returns null without exiting —
-  // so that `doc manifest` works even without an identity configured.
+  // Identity is optional for MANIFEST generation — leave author empty if unavailable.
   let author = '';
-  const pemPath = resolvePemPath();
-  if (pemPath) {
-    try {
-      author = loadIdentityFromPath(pemPath).getPrincipal().toText();
-    } catch {
-      console.error('Warning: identity PEM found but failed to parse, author field left empty');
-    }
+  try {
+    const pemPath = getPemPath();
+    author = loadIdentityFromPath(pemPath).getPrincipal().toText();
+  } catch {
+    // No identity configured or PEM parse failed — leave author field empty
   }
 
   // Build metadata header
@@ -265,6 +270,85 @@ export function generateManifest(folderPath: string, options?: ManifestOptions):
   const manifestSize = getFileSize(manifestPath);
 
   return { manifestPath, manifestHash, manifestSize, fileCount: files.length };
+}
+
+// ========== MANIFEST Parsing & Verification ==========
+
+/**
+ * Parse MANIFEST.sha256 file content into structured entries.
+ *
+ * Skips comment lines (starting with #) and empty lines.
+ * Each valid line must match: <64-hex-hash> <whitespace> <path>
+ * Non-empty non-comment lines that don't match this format cause an error
+ * (strict mode — prevents silently ignoring corrupted MANIFEST content).
+ *
+ * @param manifestContent - Full text content of the MANIFEST.sha256 file
+ * @returns Array of parsed ManifestEntry objects
+ * @throws {Error} If a non-empty non-comment line has invalid format
+ */
+export function parseManifestEntries(manifestContent: string): ManifestEntry[] {
+  const entries: ManifestEntry[] = [];
+
+  for (const rawLine of manifestContent.split('\n')) {
+    // Trim trailing \r for Windows CRLF compatibility
+    const line = rawLine.trimEnd();
+    // Skip empty lines and comment lines
+    if (!line || line.startsWith('#')) continue;
+
+    // Parse format: <hash>  ./<relative_path> or <hash>  <relative_path>
+    const match = line.match(/^([a-f0-9]{64})\s+(.+)$/);
+    if (!match) {
+      throw new Error(`Invalid MANIFEST line: "${line}"`);
+    }
+
+    entries.push({
+      expectedHash: match[1]!,
+      relativePath: match[2]!.replace(/^\.\//, ''), // Remove leading ./
+    });
+  }
+
+  return entries;
+}
+
+/**
+ * Verify file integrity against MANIFEST entries.
+ *
+ * Parses the MANIFEST content, then checks each listed file:
+ * - If the file does not exist → { passed: false, reason: 'not_found' }
+ * - If the file hash doesn't match → { passed: false, reason: 'hash_mismatch' }
+ * - If the hash matches → { passed: true }
+ *
+ * Returns structured results; the caller decides how to format output.
+ *
+ * @param manifestContent - MANIFEST.sha256 file content
+ * @param basePath - Absolute path of the folder containing the files
+ * @returns Array of verification results, one per file entry
+ * @throws {Error} If the MANIFEST format is invalid
+ */
+export function verifyManifestEntries(
+  manifestContent: string,
+  basePath: string,
+): ManifestVerifyResult[] {
+  const entries = parseManifestEntries(manifestContent);
+  const results: ManifestVerifyResult[] = [];
+
+  for (const entry of entries) {
+    const fullPath = path.join(basePath, entry.relativePath);
+
+    if (!fs.existsSync(fullPath)) {
+      results.push({ relativePath: entry.relativePath, passed: false, reason: 'not_found' });
+      continue;
+    }
+
+    const actualHash = hashFile(fullPath);
+    results.push({
+      relativePath: entry.relativePath,
+      passed: actualHash === entry.expectedHash,
+      reason: actualHash === entry.expectedHash ? undefined : 'hash_mismatch',
+    });
+  }
+
+  return results;
 }
 
 // ========== Output Formatting ==========

@@ -40,34 +40,55 @@ export default config;
 // ========== Environment Management (moved from utils.ts) ==========
 
 /**
- * Parse current environment (prod or dev) from command line arguments or environment variables
+ * Parse current environment (prod or dev) from command line arguments or environment variables.
  * Priority: --env=xxx > ZCLOAK_ENV > default prod
+ *
+ * SAFETY: Throws on unknown values to prevent typos from silently targeting production.
+ * This is a fail-closed design — write operations (register, sign, bind) must never
+ * accidentally hit production due to a misspelled environment name.
+ *
+ * When called with an explicit argv array, uses that instead of process.argv.
+ * This enables deterministic, testable behavior without global state dependency.
+ *
+ * @param argv - Optional explicit argument array (defaults to process.argv)
+ * @throws {Error} If --env= or ZCLOAK_ENV specifies an unrecognized value
  */
-export function getEnv(): Environment {
-  // Find --env=xxx in argv
-  const envArg = process.argv.find(a => a.startsWith('--env='));
+export function getEnv(argv?: string[]): Environment {
+  // 1. Check --env=xxx command line argument
+  const effectiveArgv = argv ?? process.argv;
+  const envArg = effectiveArgv.find(a => a.startsWith('--env='));
   if (envArg) {
     const val = envArg.split('=')[1];
     if (val === 'dev' || val === 'prod') return val;
-    console.error(`Warning: unknown environment "${val}", using default prod`);
+    throw new Error(
+      `Unknown environment "${val}". Valid values: prod, dev`
+    );
   }
-  // Read from environment variable
+  // 2. Check ZCLOAK_ENV environment variable
   const envVar = process.env.ZCLOAK_ENV;
   if (envVar === 'dev' || envVar === 'prod') return envVar;
+  if (envVar !== undefined && envVar !== '') {
+    throw new Error(
+      `Unknown ZCLOAK_ENV value "${envVar}". Valid values: prod, dev`
+    );
+  }
+  // 3. Default to prod (when no explicit env is specified)
   return 'prod';
 }
 
 /**
  * Get current environment's canister ID configuration
+ * @param argv - Optional explicit argument array (passed through to getEnv)
  */
-export function getCanisterIds(): CanisterIds {
-  const env = getEnv();
+export function getCanisterIds(argv?: string[]): CanisterIds {
+  const env = getEnv(argv);
   return config[env];
 }
 
 /**
  * Get current environment name (for log output)
+ * @param argv - Optional explicit argument array (passed through to getEnv)
  */
-export function getEnvLabel(): string {
-  return getEnv().toUpperCase();
+export function getEnvLabel(argv?: string[]): string {
+  return getEnv(argv).toUpperCase();
 }

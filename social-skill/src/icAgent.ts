@@ -1,14 +1,18 @@
 /**
  * zCloak.ai IC Agent Factory Module
  *
- * Creates and manages connections to ICP canisters.
- * Designed with reference to src/lib/canister/agent.ts, adapted for standalone script environment.
+ * @deprecated This module uses module-level singleton caches (global mutable state).
+ * For new code, use the Session class from './session' instead, which provides
+ * per-invocation caching and eliminates implicit global state dependencies.
  *
- * Functions:
- *   getSignActor()     → Signatures canister Actor (with identity, supports update calls)
- *   getRegistryActor() → Registry canister Actor (with identity, supports update calls)
- *   getAnonymousSignActor()     → Anonymous signatures canister Actor (query only)
- *   getAnonymousRegistryActor() → Anonymous registry canister Actor (query only)
+ * This module is retained for backward compatibility with external consumers.
+ * Internal sub-scripts have been migrated to Session.
+ *
+ * Migration guide:
+ *   Before:  import { getSignActor } from './icAgent';
+ *            const actor = await getSignActor();
+ *   After:   const session = new Session(process.argv);
+ *            const actor = await session.getSignActor();
  */
 
 import { HttpAgent, Actor, type ActorSubclass } from '@dfinity/agent';
@@ -61,6 +65,7 @@ async function getAnonymousAgent(): Promise<HttpAgent> {
 
 /**
  * Get signatures canister Actor (with identity, supports update calls)
+ * @deprecated Use Session.getSignActor() instead for per-invocation state management.
  */
 export async function getSignActor(): Promise<ActorSubclass<SignService>> {
   const agent = await getAuthenticatedAgent();
@@ -73,6 +78,7 @@ export async function getSignActor(): Promise<ActorSubclass<SignService>> {
 
 /**
  * Get registry canister Actor (with identity, supports update calls)
+ * @deprecated Use Session.getRegistryActor() instead for per-invocation state management.
  */
 export async function getRegistryActor(): Promise<ActorSubclass<RegistryService>> {
   const agent = await getAuthenticatedAgent();
@@ -85,6 +91,7 @@ export async function getRegistryActor(): Promise<ActorSubclass<RegistryService>
 
 /**
  * Get anonymous signatures canister Actor (query only, no identity needed)
+ * @deprecated Use Session.getAnonymousSignActor() instead for per-invocation state management.
  */
 export async function getAnonymousSignActor(): Promise<ActorSubclass<SignService>> {
   const agent = await getAnonymousAgent();
@@ -97,6 +104,7 @@ export async function getAnonymousSignActor(): Promise<ActorSubclass<SignService
 
 /**
  * Get anonymous registry canister Actor (query only, no identity needed)
+ * @deprecated Use Session.getAnonymousRegistryActor() instead for per-invocation state management.
  */
 export async function getAnonymousRegistryActor(): Promise<ActorSubclass<RegistryService>> {
   const agent = await getAnonymousAgent();
@@ -109,6 +117,8 @@ export async function getAnonymousRegistryActor(): Promise<ActorSubclass<Registr
 
 /**
  * Reset all Agent and Actor caches (for error recovery)
+ * @deprecated Session instances are garbage-collected naturally. This function
+ * only affects the legacy module-level caches.
  */
 export function resetAgents(): void {
   _authenticatedAgent = null;

@@ -13,9 +13,7 @@
  * All commands support --identity=<pem_path> to specify identity file.
  */
 
-import { getEnv, parseArgs } from './utils';
-import config from './config';
-import { getRegistryActor } from './icAgent';
+import { Session } from './session';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -40,19 +38,18 @@ function showHelp(): void {
 // ========== Command Implementations ==========
 
 /** Prepare binding and generate authentication URL */
-async function cmdPrepare(userPrincipal: string | undefined): Promise<void> {
+async function cmdPrepare(session: Session, userPrincipal: string | undefined): Promise<void> {
   if (!userPrincipal) {
     console.error('Error: user principal ID is required');
     console.error('Usage: zcloak-social bind prepare <user_principal>');
     process.exit(1);
   }
 
-  const env = getEnv();
-  const bindBase = config.bind_url[env];
+  const bindBase = session.getBindUrl();
 
   // Step 1: Call agent_prepare_bond (requires identity, update call)
   console.error('Calling agent_prepare_bond...');
-  const actor = await getRegistryActor();
+  const actor = await session.getRegistryActor();
   const result = await actor.agent_prepare_bond(userPrincipal);
 
   // Check return result — variant { Ok: text } | { Err: text }
@@ -76,15 +73,19 @@ async function cmdPrepare(userPrincipal: string | undefined): Promise<void> {
   console.log('Please open the URL above in your browser and complete authentication with passkey.');
 }
 
-// ========== Main Entry ==========
-async function main(): Promise<void> {
-  const args = parseArgs();
-  const command = args._args[0];
+// ========== Exported run() — called by cli.ts ==========
+
+/**
+ * Entry point when invoked via cli.ts.
+ * Receives a Session instance with pre-parsed arguments.
+ */
+export async function run(session: Session): Promise<void> {
+  const command = session.args._args[0];
 
   try {
     switch (command) {
       case 'prepare':
-        await cmdPrepare(args._args[1]);
+        await cmdPrepare(session, session.args._args[1]);
         break;
       default:
         showHelp();
@@ -96,4 +97,9 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// ========== Standalone Execution Guard ==========
+
+if (require.main === module) {
+  const session = new Session(process.argv);
+  run(session);
+}

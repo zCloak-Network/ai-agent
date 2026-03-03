@@ -29,8 +29,6 @@
 import path from 'path';
 import fs from 'fs';
 import {
-  autoPoW,
-  parseArgs,
   parseTags,
   hashFile,
   getFileSize,
@@ -39,7 +37,7 @@ import {
   formatSignResult,
   formatSignEvent,
 } from './utils';
-import { getSignActor, getAnonymousSignActor } from './icAgent';
+import { Session } from './session';
 import type { SignParm } from './types/sign-event';
 import type { ParsedArgs } from './types/common';
 
@@ -77,13 +75,13 @@ function showHelp(): void {
 /**
  * Execute agent_sign call
  * Automatically completes PoW then calls the sign canister's agent_sign method
+ * @param session - Current session context
  * @param signParm - SignParm variant object (JS object format)
  * @returns Formatted result
  */
-async function callAgentSign(signParm: SignParm): Promise<string> {
-  const pow = await autoPoW();
-
-  const actor = await getSignActor();
+async function callAgentSign(session: Session, signParm: SignParm): Promise<string> {
+  const pow = await session.autoPoW();
+  const actor = await session.getSignActor();
 
   // agent_sign(SignParm, Text_nonce)
   const result = await actor.agent_sign(signParm, pow.nonce.toString());
@@ -93,7 +91,7 @@ async function callAgentSign(signParm: SignParm): Promise<string> {
 // ========== Kind 1: Identity Profile ==========
 
 /** Set AI agent identity profile */
-async function cmdProfile(contentJson: string | undefined): Promise<void> {
+async function cmdProfile(session: Session, contentJson: string | undefined): Promise<void> {
   if (!contentJson) {
     console.error('Error: JSON-formatted profile content is required');
     console.error('Example: zcloak-social sign profile \'{"public":{"name":"My Agent","type":"ai_agent","bio":"Description"}}\'');
@@ -112,18 +110,18 @@ async function cmdProfile(contentJson: string | undefined): Promise<void> {
   const signParm: SignParm = {
     Kind1IdentityProfile: { content: contentJson },
   };
-  const result = await callAgentSign(signParm);
+  const result = await callAgentSign(session, signParm);
   console.log(result);
 }
 
 /** Query Kind 1 profile */
-async function cmdGetProfile(principal: string | undefined): Promise<void> {
+async function cmdGetProfile(session: Session, principal: string | undefined): Promise<void> {
   if (!principal) {
     console.error('Error: principal ID is required');
     process.exit(1);
   }
 
-  const actor = await getAnonymousSignActor();
+  const actor = await session.getAnonymousSignActor();
   const result = await actor.get_kind1_event_by_principal(principal);
 
   if (result && result.length > 0) {
@@ -136,7 +134,7 @@ async function cmdGetProfile(principal: string | undefined): Promise<void> {
 // ========== Kind 3: Simple Agreement ==========
 
 /** Sign a simple agreement */
-async function cmdAgreement(content: string | undefined, args: ParsedArgs): Promise<void> {
+async function cmdAgreement(session: Session, content: string | undefined, args: ParsedArgs): Promise<void> {
   if (!content) {
     console.error('Error: agreement content is required');
     process.exit(1);
@@ -150,14 +148,14 @@ async function cmdAgreement(content: string | undefined, args: ParsedArgs): Prom
       tags: tags.length > 0 ? [tags] : [],
     },
   };
-  const result = await callAgentSign(signParm);
+  const result = await callAgentSign(session, signParm);
   console.log(result);
 }
 
 // ========== Kind 4: Social Post ==========
 
 /** Publish a social post */
-async function cmdPost(content: string | undefined, args: ParsedArgs): Promise<void> {
+async function cmdPost(session: Session, content: string | undefined, args: ParsedArgs): Promise<void> {
   if (!content) {
     console.error('Error: post content is required');
     process.exit(1);
@@ -190,14 +188,14 @@ async function cmdPost(content: string | undefined, args: ParsedArgs): Promise<v
       tags: tags.length > 0 ? [tags] : [],
     },
   };
-  const result = await callAgentSign(signParm);
+  const result = await callAgentSign(session, signParm);
   console.log(result);
 }
 
 // ========== Kind 6: Interaction ==========
 
 /** Like/Dislike/Reply */
-async function cmdInteraction(eventId: string | undefined, reaction: string, content: string | undefined): Promise<void> {
+async function cmdInteraction(session: Session, eventId: string | undefined, reaction: string, content: string | undefined): Promise<void> {
   if (!eventId) {
     console.error('Error: target event ID is required');
     process.exit(1);
@@ -222,14 +220,14 @@ async function cmdInteraction(eventId: string | undefined, reaction: string, con
       tags: [tags],
     },
   };
-  const result = await callAgentSign(signParm);
+  const result = await callAgentSign(session, signParm);
   console.log(result);
 }
 
 // ========== Kind 7: Contact List ==========
 
 /** Follow an agent */
-async function cmdFollow(aiId: string | undefined, displayName: string | undefined): Promise<void> {
+async function cmdFollow(session: Session, aiId: string | undefined, displayName: string | undefined): Promise<void> {
   if (!aiId) {
     console.error('Error: agent ID to follow is required');
     console.error('Usage: zcloak-social sign follow <ai_id> <display_name>');
@@ -246,14 +244,14 @@ async function cmdFollow(aiId: string | undefined, displayName: string | undefin
       tags: [tags],
     },
   };
-  const result = await callAgentSign(signParm);
+  const result = await callAgentSign(session, signParm);
   console.log(result);
 }
 
 // ========== Kind 11: Document Signing ==========
 
 /** Sign a single file */
-async function cmdSignFile(filePath: string | undefined, args: ParsedArgs): Promise<void> {
+async function cmdSignFile(session: Session, filePath: string | undefined, args: ParsedArgs): Promise<void> {
   if (!filePath) {
     console.error('Error: file path is required');
     process.exit(1);
@@ -296,12 +294,12 @@ async function cmdSignFile(filePath: string | undefined, args: ParsedArgs): Prom
       tags: tags.length > 0 ? [tags] : [],
     },
   };
-  const result = await callAgentSign(signParm);
+  const result = await callAgentSign(session, signParm);
   console.log(result);
 }
 
 /** Sign a folder (via MANIFEST.sha256) */
-async function cmdSignFolder(folderPath: string | undefined, args: ParsedArgs): Promise<void> {
+async function cmdSignFolder(session: Session, folderPath: string | undefined, args: ParsedArgs): Promise<void> {
   if (!folderPath) {
     console.error('Error: folder path is required');
     process.exit(1);
@@ -348,46 +346,50 @@ async function cmdSignFolder(folderPath: string | undefined, args: ParsedArgs): 
       tags: tags.length > 0 ? [tags] : [],
     },
   };
-  const result = await callAgentSign(signParm);
+  const result = await callAgentSign(session, signParm);
   console.log(result);
 }
 
-// ========== Main Entry ==========
-async function main(): Promise<void> {
-  const args = parseArgs();
-  const command = args._args[0];
+// ========== Exported run() — called by cli.ts ==========
+
+/**
+ * Entry point when invoked via cli.ts.
+ * Receives a Session instance with pre-parsed arguments.
+ */
+export async function run(session: Session): Promise<void> {
+  const command = session.args._args[0];
 
   try {
     switch (command) {
       case 'profile':
-        await cmdProfile(args._args[1]);
+        await cmdProfile(session, session.args._args[1]);
         break;
       case 'get-profile':
-        await cmdGetProfile(args._args[1]);
+        await cmdGetProfile(session, session.args._args[1]);
         break;
       case 'agreement':
-        await cmdAgreement(args._args[1], args);
+        await cmdAgreement(session, session.args._args[1], session.args);
         break;
       case 'post':
-        await cmdPost(args._args[1], args);
+        await cmdPost(session, session.args._args[1], session.args);
         break;
       case 'like':
-        await cmdInteraction(args._args[1], 'like', '');
+        await cmdInteraction(session, session.args._args[1], 'like', '');
         break;
       case 'dislike':
-        await cmdInteraction(args._args[1], 'dislike', '');
+        await cmdInteraction(session, session.args._args[1], 'dislike', '');
         break;
       case 'reply':
-        await cmdInteraction(args._args[1], 'reply', args._args[2]);
+        await cmdInteraction(session, session.args._args[1], 'reply', session.args._args[2]);
         break;
       case 'follow':
-        await cmdFollow(args._args[1], args._args[2]);
+        await cmdFollow(session, session.args._args[1], session.args._args[2]);
         break;
       case 'sign-file':
-        await cmdSignFile(args._args[1], args);
+        await cmdSignFile(session, session.args._args[1], session.args);
         break;
       case 'sign-folder':
-        await cmdSignFolder(args._args[1], args);
+        await cmdSignFolder(session, session.args._args[1], session.args);
         break;
       default:
         showHelp();
@@ -399,4 +401,9 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// ========== Standalone Execution Guard ==========
+
+if (require.main === module) {
+  const session = new Session(process.argv);
+  run(session);
+}

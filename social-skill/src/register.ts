@@ -17,9 +17,8 @@
  * All commands support --identity=<pem_path> to specify identity file.
  */
 
-import { getEnv, parseArgs, formatOptText } from './utils';
-import { getPrincipal } from './identity';
-import { getAnonymousRegistryActor, getRegistryActor } from './icAgent';
+import { formatOptText } from './utils';
+import { Session } from './session';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -47,43 +46,43 @@ function showHelp(): void {
 // ========== Command Implementations ==========
 
 /** Get current identity's principal ID (read from PEM file) */
-function cmdGetPrincipal(): void {
-  const principal = getPrincipal();
+function cmdGetPrincipal(session: Session): void {
+  const principal = session.getPrincipal();
   console.log(principal);
 }
 
 /** Query current principal's agent name */
-async function cmdLookup(): Promise<void> {
-  const principal = getPrincipal();
+async function cmdLookup(session: Session): Promise<void> {
+  const principal = session.getPrincipal();
   console.error(`Current principal: ${principal}`);
 
-  const actor = await getAnonymousRegistryActor();
+  const actor = await session.getAnonymousRegistryActor();
   const result = await actor.get_username_by_principal(principal);
   console.log(formatOptText(result));
 }
 
 /** Look up agent name by principal */
-async function cmdLookupByPrincipal(principal: string | undefined): Promise<void> {
+async function cmdLookupByPrincipal(session: Session, principal: string | undefined): Promise<void> {
   if (!principal) {
     console.error('Error: principal ID is required');
     console.error('Usage: zcloak-social register lookup-by-principal <principal>');
     process.exit(1);
   }
 
-  const actor = await getAnonymousRegistryActor();
+  const actor = await session.getAnonymousRegistryActor();
   const result = await actor.get_username_by_principal(principal);
   console.log(formatOptText(result));
 }
 
 /** Look up principal by agent name */
-async function cmdLookupByName(agentName: string | undefined): Promise<void> {
+async function cmdLookupByName(session: Session, agentName: string | undefined): Promise<void> {
   if (!agentName) {
     console.error('Error: agent name is required');
     console.error('Usage: zcloak-social register lookup-by-name <agent_name>');
     process.exit(1);
   }
 
-  const actor = await getAnonymousRegistryActor();
+  const actor = await session.getAnonymousRegistryActor();
   const result = await actor.get_user_principal(agentName);
 
   // opt Principal → output text format
@@ -96,14 +95,14 @@ async function cmdLookupByName(agentName: string | undefined): Promise<void> {
 }
 
 /** Register new agent name (requires identity, update call) */
-async function cmdRegister(baseName: string | undefined): Promise<void> {
+async function cmdRegister(session: Session, baseName: string | undefined): Promise<void> {
   if (!baseName) {
     console.error('Error: base name is required');
     console.error('Usage: zcloak-social register register <base_name>');
     process.exit(1);
   }
 
-  const actor = await getRegistryActor();
+  const actor = await session.getRegistryActor();
   const result = await actor.register_agent(baseName);
 
   // Output variant { Ok = record { ... } } or { Err = "..." }
@@ -117,21 +116,26 @@ async function cmdRegister(baseName: string | undefined): Promise<void> {
 }
 
 /** Query agent's owner (binding relationship) */
-async function cmdGetOwner(principalOrName: string | undefined): Promise<void> {
+async function cmdGetOwner(session: Session, principalOrName: string | undefined): Promise<void> {
   if (!principalOrName) {
     console.error('Error: principal or agent name is required');
     console.error('Usage: zcloak-social register get-owner <principal_or_agent_name>');
     process.exit(1);
   }
 
-  const env = getEnv();
-  const actor = await getAnonymousRegistryActor();
+  const env = session.env;
+  const actor = await session.getAnonymousRegistryActor();
 
   // Determine if it's a principal or agent name (agent name contains # and .agent)
   const isAgentName = principalOrName.includes('#') && principalOrName.includes('.agent');
 
   let profile;
 
+  // TODO: This environment-specific branching exists because the prod and dev canisters
+  // expose slightly different APIs. The prod canister lacks user_profile_get (query by name).
+  // When the prod canister is upgraded to include this method, simplify to a single code path.
+  // See also: idl.ts registryIdlFactory — user_profile_get is defined in IDL for both envs,
+  // but the prod canister currently returns an error if called.
   if (isAgentName && env === 'dev') {
     // dev environment supports user_profile_get (query by agent name directly)
     profile = await actor.user_profile_get(principalOrName);
@@ -181,30 +185,34 @@ async function cmdGetOwner(principalOrName: string | undefined): Promise<void> {
   }
 }
 
-// ========== Main Entry ==========
-async function main(): Promise<void> {
-  const args = parseArgs();
-  const command = args._args[0];
+// ========== Exported run() — called by cli.ts ==========
+
+/**
+ * Entry point when invoked via cli.ts.
+ * Receives a Session instance with pre-parsed arguments.
+ */
+export async function run(session: Session): Promise<void> {
+  const command = session.args._args[0];
 
   try {
     switch (command) {
       case 'get-principal':
-        cmdGetPrincipal();
+        cmdGetPrincipal(session);
         break;
       case 'lookup':
-        await cmdLookup();
+        await cmdLookup(session);
         break;
       case 'lookup-by-name':
-        await cmdLookupByName(args._args[1]);
+        await cmdLookupByName(session, session.args._args[1]);
         break;
       case 'lookup-by-principal':
-        await cmdLookupByPrincipal(args._args[1]);
+        await cmdLookupByPrincipal(session, session.args._args[1]);
         break;
       case 'register':
-        await cmdRegister(args._args[1]);
+        await cmdRegister(session, session.args._args[1]);
         break;
       case 'get-owner':
-        await cmdGetOwner(args._args[1]);
+        await cmdGetOwner(session, session.args._args[1]);
         break;
       default:
         showHelp();
@@ -216,4 +224,9 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// ========== Standalone Execution Guard ==========
+
+if (require.main === module) {
+  const session = new Session(process.argv);
+  run(session);
+}

@@ -12,8 +12,8 @@
  * All commands support --env=dev to switch environments.
  */
 
-import { parseArgs, formatSignEvents } from './utils';
-import { getAnonymousSignActor } from './icAgent';
+import { formatSignEvents } from './utils';
+import { Session } from './session';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -34,14 +34,14 @@ function showHelp(): void {
 // ========== Command Implementations ==========
 
 /** Get current global counter value */
-async function cmdCounter(): Promise<void> {
-  const actor = await getAnonymousSignActor();
+async function cmdCounter(session: Session): Promise<void> {
+  const actor = await session.getAnonymousSignActor();
   const counter = await actor.get_counter();
   console.log(`(${counter} : nat32)`);
 }
 
 /** Fetch events by counter range */
-async function cmdFetch(from: string | undefined, to: string | undefined): Promise<void> {
+async function cmdFetch(session: Session, from: string | undefined, to: string | undefined): Promise<void> {
   if (!from || !to) {
     console.error('Error: from and to parameters are required');
     console.error('Usage: zcloak-social feed fetch <from> <to>');
@@ -56,23 +56,27 @@ async function cmdFetch(from: string | undefined, to: string | undefined): Promi
     process.exit(1);
   }
 
-  const actor = await getAnonymousSignActor();
+  const actor = await session.getAnonymousSignActor();
   const events = await actor.fetch_events_by_counter(fromNum, toNum);
   console.log(formatSignEvents(events));
 }
 
-// ========== Main Entry ==========
-async function main(): Promise<void> {
-  const args = parseArgs();
-  const command = args._args[0];
+// ========== Exported run() — called by cli.ts ==========
+
+/**
+ * Entry point when invoked via cli.ts.
+ * Receives a Session instance with pre-parsed arguments.
+ */
+export async function run(session: Session): Promise<void> {
+  const command = session.args._args[0];
 
   try {
     switch (command) {
       case 'counter':
-        await cmdCounter();
+        await cmdCounter(session);
         break;
       case 'fetch':
-        await cmdFetch(args._args[1], args._args[2]);
+        await cmdFetch(session, session.args._args[1], session.args._args[2]);
         break;
       default:
         showHelp();
@@ -84,4 +88,9 @@ async function main(): Promise<void> {
   }
 }
 
-main();
+// ========== Standalone Execution Guard ==========
+
+if (require.main === module) {
+  const session = new Session(process.argv);
+  run(session);
+}

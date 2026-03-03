@@ -18,8 +18,9 @@
 import fs from 'fs';
 import path from 'path';
 import { generateKeyPairSync } from 'crypto';
-import { parseArgs } from './utils';
-import { getPrincipal, getPemPath, DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity';
+import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity';
+import { Session } from './session';
+import type { ParsedArgs } from './types/common';
 
 // ========== Help ==========
 
@@ -63,7 +64,7 @@ function showHelp(): void {
  * This is byte-for-byte identical to what `dfx identity new` generates and is directly
  * loadable by Secp256k1KeyIdentity.fromPem().
  */
-function cmdGenerate(args: ReturnType<typeof parseArgs>): void {
+function cmdGenerate(args: ParsedArgs): void {
   // Determine output path: --output flag or dfx default
   const outputRaw = args['output'];
   const outputPath = typeof outputRaw === 'string'
@@ -101,18 +102,23 @@ function cmdGenerate(args: ReturnType<typeof parseArgs>): void {
 
 /**
  * Print the PEM path and principal ID of the current identity.
+ * Uses session to resolve PEM path and principal from the argv-based context.
  */
-function cmdShow(): void {
-  const pemPath = getPemPath();
-  const principal = getPrincipal();
+function cmdShow(session: Session): void {
+  const pemPath = session.getPemPath();
+  const principal = session.getPrincipal();
   console.log(`PEM file:     ${pemPath}`);
   console.log(`Principal ID: ${principal}`);
 }
 
-// ========== Entry Point ==========
+// ========== Exported run() — called by cli.ts ==========
 
-function main(): void {
-  const args = parseArgs();
+/**
+ * Entry point when invoked via cli.ts.
+ * Receives a Session instance with pre-parsed arguments.
+ */
+export function run(session: Session): void {
+  const args = session.args;
   const cmd = args._args[0];
 
   if (!cmd || cmd === '--help' || cmd === '-h') {
@@ -120,18 +126,28 @@ function main(): void {
     process.exit(0);
   }
 
-  switch (cmd) {
-    case 'generate':
-      cmdGenerate(args);
-      break;
-    case 'show':
-      cmdShow();
-      break;
-    default:
-      console.error(`Unknown command: ${cmd}`);
-      console.error('Run "zcloak-social identity" for help.');
-      process.exit(1);
+  try {
+    switch (cmd) {
+      case 'generate':
+        cmdGenerate(args);
+        break;
+      case 'show':
+        cmdShow(session);
+        break;
+      default:
+        console.error(`Unknown command: ${cmd}`);
+        console.error('Run "zcloak-social identity" for help.');
+        process.exit(1);
+    }
+  } catch (err) {
+    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
   }
 }
 
-main();
+// ========== Standalone Execution Guard ==========
+
+if (require.main === module) {
+  const session = new Session(process.argv);
+  run(session);
+}

@@ -31,45 +31,26 @@ export const DEFAULT_PEM_PATH: string = path.join(
 );
 
 /**
- * Try to resolve the PEM file path without terminating the process.
+ * Get PEM file path.
+ * Searches by priority: --identity argument > environment variable > dfx default location.
  *
- * Follows the same lookup priority as getPemPath() but returns null instead of
- * calling process.exit() when no file is found. Use this in contexts where
- * the identity is optional (e.g. the "author" field in MANIFEST.sha256 generation).
+ * When called with an explicit argv array, uses that instead of process.argv.
+ * This enables deterministic, testable behavior without global state dependency.
  *
- * Note: process.exit() cannot be caught by a try-catch in Node.js, so callers
- * that need graceful fallback must use this function instead of getPemPath().
- *
- * @returns Absolute path to PEM file, or null if no file is available
- */
-export function resolvePemPath(): string | null {
-  const identityArg = process.argv.find(a => a.startsWith('--identity='));
-  if (identityArg) {
-    const p = identityArg.split('=').slice(1).join('=');
-    const resolved = path.resolve(p);
-    return fs.existsSync(resolved) ? resolved : null;
-  }
-  if (process.env.ZCLOAK_IDENTITY) {
-    const resolved = path.resolve(process.env.ZCLOAK_IDENTITY);
-    return fs.existsSync(resolved) ? resolved : null;
-  }
-  return fs.existsSync(DEFAULT_PEM_PATH) ? DEFAULT_PEM_PATH : null;
-}
-
-/**
- * Get PEM file path
- * Searches by priority: --identity argument > environment variable > dfx default location
+ * @param argv - Optional explicit argument array (defaults to process.argv)
  * @returns Absolute path to PEM file
+ * @throws {Error} If no PEM file can be found or the specified path does not exist
  */
-export function getPemPath(): string {
+export function getPemPath(argv?: string[]): string {
+  const effectiveArgv = argv ?? process.argv;
+
   // 1. Get from --identity=<path> argument
-  const identityArg = process.argv.find(a => a.startsWith('--identity='));
+  const identityArg = effectiveArgv.find(a => a.startsWith('--identity='));
   if (identityArg) {
     const p = identityArg.split('=').slice(1).join('='); // Support paths containing =
     const resolved = path.resolve(p);
     if (!fs.existsSync(resolved)) {
-      console.error(`Error: specified PEM file does not exist: ${resolved}`);
-      process.exit(1);
+      throw new Error(`Specified PEM file does not exist: ${resolved}`);
     }
     return resolved;
   }
@@ -78,8 +59,7 @@ export function getPemPath(): string {
   if (process.env.ZCLOAK_IDENTITY) {
     const resolved = path.resolve(process.env.ZCLOAK_IDENTITY);
     if (!fs.existsSync(resolved)) {
-      console.error(`Error: PEM file specified by ZCLOAK_IDENTITY does not exist: ${resolved}`);
-      process.exit(1);
+      throw new Error(`PEM file specified by ZCLOAK_IDENTITY does not exist: ${resolved}`);
     }
     return resolved;
   }
@@ -89,12 +69,12 @@ export function getPemPath(): string {
     return DEFAULT_PEM_PATH;
   }
 
-  console.error('Error: identity PEM file not found.');
-  console.error('Please provide one via:');
-  console.error('  1. --identity=<pem_file_path>');
-  console.error('  2. Set environment variable ZCLOAK_IDENTITY=<pem_file_path>');
-  console.error(`  3. Ensure dfx default identity exists: ${DEFAULT_PEM_PATH}`);
-  process.exit(1);
+  throw new Error(
+    'Identity PEM file not found. Provide one via:\n' +
+    '  1. --identity=<pem_file_path>\n' +
+    '  2. Set environment variable ZCLOAK_IDENTITY=<pem_file_path>\n' +
+    `  3. Ensure dfx default identity exists: ${DEFAULT_PEM_PATH}`
+  );
 }
 
 // ========== Identity Management ==========
@@ -117,15 +97,16 @@ let _identity: Secp256k1KeyIdentity | null = null;
  *
  * @param pemPath - Absolute path to the PEM file
  * @returns Secp256k1KeyIdentity
+ * @throws {Error} If the PEM file cannot be read or parsed
  */
 export function loadIdentityFromPath(pemPath: string): Secp256k1KeyIdentity {
   const pemContent = fs.readFileSync(pemPath, 'utf-8');
   try {
     return Secp256k1KeyIdentity.fromPem(pemContent);
   } catch (err) {
-    console.error(`Error: failed to load ECDSA secp256k1 identity from ${pemPath}`);
-    console.error((err as Error).message);
-    process.exit(1);
+    throw new Error(
+      `Failed to load ECDSA secp256k1 identity from ${pemPath}: ${(err as Error).message}`
+    );
   }
 }
 
@@ -133,6 +114,9 @@ export function loadIdentityFromPath(pemPath: string): Secp256k1KeyIdentity {
  * Load ECDSA secp256k1 identity, resolving the PEM path from argv / env / default.
  *
  * Returns a cached instance on subsequent calls to avoid re-reading the file.
+ *
+ * @deprecated Uses module-level cache (global mutable state) and reads process.argv implicitly.
+ * Use Session.getIdentity() instead for per-invocation state management.
  */
 export function loadIdentity(): Secp256k1KeyIdentity {
   if (_identity) return _identity;
@@ -145,6 +129,8 @@ export function loadIdentity(): Secp256k1KeyIdentity {
 /**
  * Get current identity's Principal ID (text format)
  * Replaces the original `dfx identity get-principal`
+ *
+ * @deprecated Uses module-level cache via loadIdentity(). Use Session.getPrincipal() instead.
  */
 export function getPrincipal(): string {
   const identity = loadIdentity();
@@ -153,6 +139,8 @@ export function getPrincipal(): string {
 
 /**
  * Get current identity's Principal object
+ *
+ * @deprecated Uses module-level cache via loadIdentity(). Use Session.getPrincipalObj() instead.
  */
 export function getPrincipalObj(): Principal {
   const identity = loadIdentity();

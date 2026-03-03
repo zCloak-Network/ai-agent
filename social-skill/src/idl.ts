@@ -1,269 +1,268 @@
 /**
- * zCloak.ai Candid IDL Definitions
+ * zCloak.ai Candid IDL Definitions — Single Source of Truth
  *
  * Contains complete interface definitions for the signatures canister and registry canister.
- * Based on src/lib/canister/idl.ts with additions from skill.md documentation.
+ * TypeScript type interfaces in types/sign-event.ts and types/registry.ts are
+ * AUTO-GENERATED from these IDL definitions via `npm run generate-types`.
  *
- * Notes:
- * - agent_sign takes 2 parameters (SignParm, Text), as per skill.md
- * - Kind1IdentityProfile added (missing from original IDL)
- * - All registry canister methods added
+ * When the canister API changes:
+ *   1. Update the IDL definitions in this file
+ *   2. Run `npm run generate-types` to regenerate TS types
+ *   3. Run `npm run build` to verify compilation
+ *
+ * Architecture:
+ *   - buildSignTypes() / buildRegistryTypes()       — named IDL type constructors (used by codegen)
+ *   - buildSignService() / buildRegistryService()   — service constructors (used by codegen for shared instances)
+ *   - signIdlFactory / registryIdlFactory           — IDL.InterfaceFactory (used by @dfinity/agent Actor)
+ *
+ * The canister's actual Candid .did schema is the upstream source; this file is derived from
+ * skill.md documentation and verified against actual canister responses.
  */
 
 import { IDL } from '@dfinity/candid';
 
-// ========== Signatures Canister IDL ==========
+// ========== Signatures Canister ==========
 
 /**
- * Signatures canister IDL factory
- * Canister ID:
- *   prod: jayj5-xyaaa-aaaam-qfinq-cai
- *   dev:  zpbbm-piaaa-aaaaj-a3dsq-cai
+ * Build named IDL types for the signatures canister.
+ * Exported so that the codegen script can discover type names and their structures.
+ *
+ * @param I - The IDL module (passed through to allow use in both factory and codegen contexts)
  */
-export const signIdlFactory: IDL.InterfaceFactory = ({ IDL }) => {
-  // SignEvent record type — sign event returned by canister
-  const SignEvent = IDL.Record({
-    counter: IDL.Opt(IDL.Nat32),          // Global auto-increment counter
-    id: IDL.Text,                          // Event unique ID (sha256 hash)
-    kind: IDL.Nat32,                       // Event type (1-15)
-    ai_id: IDL.Text,                       // Signer principal ID
-    created_at: IDL.Nat64,                 // Creation timestamp (nanoseconds)
-    tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),  // Tags array
-    content: IDL.Opt(IDL.Text),            // Content (optional)
-    content_hash: IDL.Text,                // Content SHA256 hash
+export function buildSignTypes(I: typeof IDL) {
+  /** SignEvent record — sign event returned by canister */
+  const SignEvent = I.Record({
+    counter: I.Opt(I.Nat32),          // Global auto-increment counter
+    id: I.Text,                        // Event unique ID (sha256 hash)
+    kind: I.Nat32,                     // Event type (1-15)
+    ai_id: I.Text,                     // Signer principal ID
+    created_at: I.Nat64,               // Creation timestamp (nanoseconds)
+    tags: I.Opt(I.Vec(I.Vec(I.Text))), // Tags array
+    content: I.Opt(I.Text),            // Content (optional)
+    content_hash: I.Text,              // Content SHA256 hash
   });
 
-  // SignParm variant type — 15 signing parameter types
-  const SignParm = IDL.Variant({
-    // Kind 1: Identity profile (present in skill.md, missing from original IDL)
-    Kind1IdentityProfile: IDL.Record({
-      content: IDL.Text,
-    }),
-    // Kind 2: Identity verification
-    Kind2IdentityVerification: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 3: Simple agreement
-    Kind3SimpleAgreement: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 4: Public post
-    Kind4PublicPost: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 5: Private post
-    Kind5PrivatePost: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 6: Interaction (like/dislike/reply)
-    Kind6Interaction: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 7: Contact list (follow)
-    Kind7ContactList: IDL.Record({
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 8: Media asset
-    Kind8MediaAsset: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 9: Service listing
-    Kind9ServiceListing: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 10: Job request
-    Kind10JobRequest: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 11: Document signature
-    Kind11DocumentSignature: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 12: Public contract
-    Kind12PublicContract: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 13: Private contract
-    Kind13PrivateContract: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 14: Review
-    Kind14Review: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
-    // Kind 15: General attestation
-    Kind15GeneralAttestation: IDL.Record({
-      content: IDL.Text,
-      tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
-    }),
+  /** SignParm variant — 15 signing parameter types */
+  const SignParm = I.Variant({
+    Kind1IdentityProfile: I.Record({ content: I.Text }),
+    Kind2IdentityVerification: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind3SimpleAgreement: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind4PublicPost: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind5PrivatePost: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind6Interaction: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind7ContactList: I.Record({ tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind8MediaAsset: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind9ServiceListing: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind10JobRequest: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind11DocumentSignature: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind12PublicContract: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind13PrivateContract: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind14Review: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
+    Kind15GeneralAttestation: I.Record({ content: I.Text, tags: I.Opt(I.Vec(I.Vec(I.Text))) }),
   });
 
-  return IDL.Service({
+  return { SignEvent, SignParm };
+}
+
+/**
+ * Build the signatures canister service, reusing pre-built named types.
+ * Exported for codegen to share type instances with the name registry.
+ *
+ * @param I     - The IDL module
+ * @param types - Named types from buildSignTypes() (same instances used in the registry)
+ */
+export function buildSignService(
+  I: typeof IDL,
+  types: ReturnType<typeof buildSignTypes>,
+) {
+  const { SignEvent, SignParm } = types;
+
+  return I.Service({
     // ===== Signing operations (update call, requires identity) =====
 
     // agent_sign: Signing with PoW (2 params: SignParm + nonce text)
-    // skill.md: agent_sign(SignParm, "nonce")
-    agent_sign: IDL.Func(
-      [SignParm, IDL.Text],
-      [IDL.Variant({ Ok: SignEvent, Err: IDL.Text })],
+    agent_sign: I.Func(
+      [SignParm, I.Text],
+      [I.Variant({ Ok: SignEvent, Err: I.Text })],
       []
     ),
 
     // sign: Direct signing (no PoW, requires canister permission)
-    sign: IDL.Func([SignParm], [SignEvent], []),
+    sign: I.Func([SignParm], [SignEvent], []),
 
     // mcp_sign: MCP proxy signing
-    mcp_sign: IDL.Func([IDL.Principal, SignParm], [SignEvent], []),
+    mcp_sign: I.Func([I.Principal, SignParm], [SignEvent], []),
 
     // ===== Query operations (query, can be anonymous) =====
 
     // Get global counter
-    get_counter: IDL.Func([], [IDL.Nat32], ['query']),
+    get_counter: I.Func([], [I.Nat32], ['query']),
 
     // Fetch events by counter range
-    fetch_events_by_counter: IDL.Func(
-      [IDL.Nat32, IDL.Nat32],
-      [IDL.Vec(SignEvent)],
+    fetch_events_by_counter: I.Func(
+      [I.Nat32, I.Nat32],
+      [I.Vec(SignEvent)],
       ['query']
     ),
 
     // Get all sign events
-    get_all_sign_events: IDL.Func([], [IDL.Vec(SignEvent)], ['query']),
+    get_all_sign_events: I.Func([], [I.Vec(SignEvent)], ['query']),
 
     // Get user sign history (paginated)
-    fetch_user_sign: IDL.Func(
-      [IDL.Principal, IDL.Nat32, IDL.Nat32],
-      [IDL.Nat32, IDL.Vec(SignEvent)],
+    fetch_user_sign: I.Func(
+      [I.Principal, I.Nat32, I.Nat32],
+      [I.Nat32, I.Vec(SignEvent)],
       ['query']
     ),
 
     // Get user's latest sign event ID (PoW base)
-    get_user_latest_sign_event_id: IDL.Func(
-      [IDL.Principal],
-      [IDL.Text],
+    get_user_latest_sign_event_id: I.Func(
+      [I.Principal],
+      [I.Text],
       ['query']
     ),
 
     // Verify signature by message content
-    verify_message: IDL.Func([IDL.Text], [IDL.Vec(SignEvent)], ['query']),
+    verify_message: I.Func([I.Text], [I.Vec(SignEvent)], ['query']),
 
     // Verify signature by message hash
-    verify_msg_hash: IDL.Func([IDL.Text], [IDL.Vec(SignEvent)], ['query']),
+    verify_msg_hash: I.Func([I.Text], [I.Vec(SignEvent)], ['query']),
 
     // Verify signature by file hash
-    verify_file_hash: IDL.Func([IDL.Text], [IDL.Vec(SignEvent)], ['query']),
+    verify_file_hash: I.Func([I.Text], [I.Vec(SignEvent)], ['query']),
 
     // Get sign event by ID
-    get_sign_event_by_id: IDL.Func(
-      [IDL.Text],
-      [IDL.Opt(SignEvent)],
+    get_sign_event_by_id: I.Func(
+      [I.Text],
+      [I.Opt(SignEvent)],
       ['query']
     ),
 
     // Get Kind 1 identity profile
-    get_kind1_event_by_principal: IDL.Func(
-      [IDL.Text],
-      [IDL.Opt(SignEvent)],
+    get_kind1_event_by_principal: I.Func(
+      [I.Text],
+      [I.Opt(SignEvent)],
       ['query']
     ),
 
     // Connection test
-    greet: IDL.Func([IDL.Text], [IDL.Text], ['query']),
+    greet: I.Func([I.Text], [I.Text], ['query']),
   });
-};
-
-// ========== Registry Canister IDL ==========
+}
 
 /**
- * Registry canister IDL factory
+ * Signatures canister IDL factory (standard @dfinity/agent interface)
  * Canister ID:
- *   prod: ytmuz-nyaaa-aaaah-qqoja-cai
- *   dev:  3spie-caaaa-aaaam-ae3sa-cai
- *
- * Note: UserProfile structure inferred from skill.md response examples.
- * Fields may be incomplete; can be supplemented based on actual return values.
+ *   prod: jayj5-xyaaa-aaaam-qfinq-cai
+ *   dev:  zpbbm-piaaa-aaaaj-a3dsq-cai
  */
-export const registryIdlFactory: IDL.InterfaceFactory = ({ IDL }) => {
-  // Position record in UserProfile
-  const Position = IDL.Record({
-    is_human: IDL.Bool,
-    connection_list: IDL.Vec(IDL.Principal),
+export const signIdlFactory: IDL.InterfaceFactory = () => {
+  return buildSignService(IDL, buildSignTypes(IDL));
+};
+
+// ========== Registry Canister ==========
+
+/**
+ * Build named IDL types for the registry canister.
+ * Exported so that the codegen script can discover type names and their structures.
+ *
+ * @param I - The IDL module
+ */
+export function buildRegistryTypes(I: typeof IDL) {
+  /** Position record — position information in the registry */
+  const Position = I.Record({
+    is_human: I.Bool,
+    connection_list: I.Vec(I.Principal),
   });
 
-  // AI profile record
-  const AiProfile = IDL.Record({
-    position: IDL.Opt(Position),
+  /** AI profile record */
+  const AiProfile = I.Record({
+    position: I.Opt(Position),
   });
 
-  // User profile record
-  const UserProfile = IDL.Record({
-    username: IDL.Text,
-    ai_profile: IDL.Opt(AiProfile),
-    principal_id: IDL.Opt(IDL.Text),
+  /** User profile record */
+  const UserProfile = I.Record({
+    username: I.Text,
+    ai_profile: I.Opt(AiProfile),
+    principal_id: I.Opt(I.Text),
   });
 
-  // Registration success result record
-  const RegisterResult = IDL.Record({
-    username: IDL.Text,
+  /** Registration success result record */
+  const RegisterResult = I.Record({
+    username: I.Text,
   });
 
-  return IDL.Service({
+  return { Position, AiProfile, UserProfile, RegisterResult };
+}
+
+/**
+ * Build the registry canister service, reusing pre-built named types.
+ * Exported for codegen to share type instances with the name registry.
+ *
+ * @param I     - The IDL module
+ * @param types - Named types from buildRegistryTypes() (same instances used in the registry)
+ */
+export function buildRegistryService(
+  I: typeof IDL,
+  types: ReturnType<typeof buildRegistryTypes>,
+) {
+  const { UserProfile, RegisterResult } = types;
+
+  return I.Service({
     // ===== Query operations (query) =====
 
     // Get username by principal
-    get_username_by_principal: IDL.Func(
-      [IDL.Text],
-      [IDL.Opt(IDL.Text)],
+    get_username_by_principal: I.Func(
+      [I.Text],
+      [I.Opt(I.Text)],
       ['query']
     ),
 
     // Get principal by username
-    get_user_principal: IDL.Func(
-      [IDL.Text],
-      [IDL.Opt(IDL.Principal)],
+    get_user_principal: I.Func(
+      [I.Text],
+      [I.Opt(I.Principal)],
       ['query']
     ),
 
     // Get UserProfile by username (available in dev environment)
-    user_profile_get: IDL.Func(
-      [IDL.Text],
-      [IDL.Opt(UserProfile)],
+    user_profile_get: I.Func(
+      [I.Text],
+      [I.Opt(UserProfile)],
       ['query']
     ),
 
     // Get UserProfile by principal
-    user_profile_get_by_principal: IDL.Func(
-      [IDL.Text],
-      [IDL.Opt(UserProfile)],
+    user_profile_get_by_principal: I.Func(
+      [I.Text],
+      [I.Opt(UserProfile)],
       ['query']
     ),
 
     // ===== Update operations (update call, requires identity) =====
 
     // Register new agent name
-    register_agent: IDL.Func(
-      [IDL.Text],
-      [IDL.Variant({ Ok: RegisterResult, Err: IDL.Text })],
+    register_agent: I.Func(
+      [I.Text],
+      [I.Variant({ Ok: RegisterResult, Err: I.Text })],
       []
     ),
 
     // Prepare agent-owner binding (WebAuthn challenge)
-    agent_prepare_bond: IDL.Func(
-      [IDL.Text],
-      [IDL.Variant({ Ok: IDL.Text, Err: IDL.Text })],
+    agent_prepare_bond: I.Func(
+      [I.Text],
+      [I.Variant({ Ok: I.Text, Err: I.Text })],
       []
     ),
   });
+}
+
+/**
+ * Registry canister IDL factory (standard @dfinity/agent interface)
+ * Canister ID:
+ *   prod: ytmuz-nyaaa-aaaah-qqoja-cai
+ *   dev:  3spie-caaaa-aaaam-ae3sa-cai
+ */
+export const registryIdlFactory: IDL.InterfaceFactory = () => {
+  return buildRegistryService(IDL, buildRegistryTypes(IDL));
 };

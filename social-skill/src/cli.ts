@@ -14,6 +14,12 @@
  *   zcloak-social doc <command> [args]        Document tools
  *   zcloak-social pow <base> <zeros>          PoW computation
  *
+ * Architecture:
+ *   cli.ts creates a Session from a constructed sub-argv array and passes it
+ *   to the sub-script's run(session) function. This eliminates the previous
+ *   process.argv rewriting (global mutable state) while preserving the same
+ *   argument-parsing behavior in each sub-script.
+ *
  * Installation:
  *   npm install -g zcloak-social
  *
@@ -25,8 +31,9 @@
  */
 
 import path from 'path';
+import { Session } from './session';
 
-// Supported modules and their corresponding script files (compiled in dist/ directory)
+/** Supported modules and their corresponding script files (compiled in dist/ directory) */
 const MODULES: Record<string, string> = {
   identity: 'identity_cmd',
   register: 'register',
@@ -68,7 +75,20 @@ function showHelp(): void {
   console.log('  zcloak-social <module>     (run without command to show module help)');
 }
 
-function main(): void {
+/**
+ * CLI entry point.
+ *
+ * Instead of rewriting process.argv (global mutable state), we construct a
+ * synthetic sub-argv array that looks like what the sub-script would see if
+ * invoked directly, and pass it via a Session instance.
+ *
+ * Original process.argv: ['node', 'cli.js', 'register', 'get-principal', '--env=dev']
+ * Constructed sub-argv:  ['node', 'register.js', 'get-principal', '--env=dev']
+ *
+ * The Session constructor calls parseArgs(subArgv) which skips [0] and [1],
+ * so the sub-script receives the same parsed arguments as before.
+ */
+async function main(): Promise<void> {
   // Get module name (skip node and script path)
   const moduleName = process.argv[2];
 
@@ -87,15 +107,23 @@ function main(): void {
     process.exit(1);
   }
 
-  // Rewrite process.argv so sub-scripts parse arguments correctly
-  // Original: ['node', 'cli.js', 'register', 'get-principal', '--env=dev']
-  // Transformed: ['node', 'register.js', 'get-principal', '--env=dev']
+  // Construct sub-argv without mutating process.argv.
+  // Format: [node_binary, script_path, ...remaining_args]
+  // This preserves the same index layout that parseArgs() expects (skips first 2 elements).
   const scriptPath = path.join(__dirname, scriptFile);
-  process.argv = [process.argv[0]!, scriptPath, ...process.argv.slice(3)];
+  const subArgv = [process.argv[0]!, scriptPath, ...process.argv.slice(3)];
 
-  // Load and execute sub-script (after compilation, __dirname points to dist/, sub-scripts are in the same directory)
+  // Create a Session from the constructed argv
+  const session = new Session(subArgv);
+
+  // Load and execute sub-script's run() function.
+  // After compilation, __dirname points to dist/, sub-scripts are in the same directory.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require(scriptPath);
+  const mod = require(scriptPath);
+  await mod.run(session);
 }
 
-main();
+main().catch((err: unknown) => {
+  console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+});

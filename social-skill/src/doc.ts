@@ -15,12 +15,13 @@
 import fs from 'fs';
 import path from 'path';
 import {
-  parseArgs,
   hashFile,
   getFileSize,
   getMimeType,
   generateManifest,
+  verifyManifestEntries,
 } from './utils';
+import { Session } from './session';
 import type { ParsedArgs } from './types/common';
 
 // ========== Help Information ==========
@@ -77,7 +78,7 @@ function cmdManifest(folderPath: string | undefined, args: ParsedArgs): void {
 
 /**
  * Verify file integrity in MANIFEST.sha256
- * Pure Node.js implementation, parses and verifies each file hash line by line
+ * Uses shared MANIFEST parser from utils.ts for consistent parsing and strict validation
  */
 function cmdVerifyManifest(folderPath: string | undefined): void {
   if (!folderPath) {
@@ -92,51 +93,30 @@ function cmdVerifyManifest(folderPath: string | undefined): void {
   }
 
   const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
+  const results = verifyManifestEntries(manifestContent, folderPath);
+
   let allPassed = true;
-  let fileCount = 0;
-
-  for (const rawLine of manifestContent.split('\n')) {
-    // Trim trailing \r so that CRLF line endings (Windows) don't corrupt file paths
-    const line = rawLine.trimEnd();
-    // Skip comment lines and empty lines
-    if (!line || line.startsWith('#')) continue;
-
-    // Parse format: <hash>  ./<relative_path>  or  <hash>  <relative_path>
-    const match = line.match(/^([a-f0-9]{64})\s+(.+)$/);
-    if (!match) continue;
-
-    const expectedHash = match[1]!;
-    const relativePath = match[2]!.replace(/^\.\//, '');
-    const fullPath = path.join(folderPath, relativePath);
-
-    fileCount++;
-
-    if (!fs.existsSync(fullPath)) {
-      console.log(`FAILED: ${relativePath} (file not found)`);
-      allPassed = false;
-      continue;
-    }
-
-    const actualHash = hashFile(fullPath);
-    if (actualHash === expectedHash) {
-      console.log(`${relativePath}: OK`);
+  for (const r of results) {
+    if (r.passed) {
+      console.log(`OK: ${r.relativePath}`);
     } else {
-      console.log(`${relativePath}: FAILED`);
+      const suffix = r.reason === 'not_found' ? ' (file not found)' : '';
+      console.log(`FAILED: ${r.relativePath}${suffix}`);
       allPassed = false;
     }
   }
 
   if (!allPassed) {
-    console.error(`\nVerification failed! Some files do not match (checked ${fileCount} files)`);
+    console.error(`\nVerification failed! Some files do not match (checked ${results.length} files)`);
     process.exit(1);
   }
 
-  console.log(`\nAll files verified successfully! (${fileCount} files)`);
+  console.log(`\nAll files verified successfully! (${results.length} files)`);
 
   // Output MANIFEST hash (for subsequent on-chain verification)
   const manifestHash = hashFile(manifestPath);
   console.log(`\nMANIFEST SHA256: ${manifestHash}`);
-  console.log('(Use this hash for on-chain signature verification: node verify.js file MANIFEST.sha256)');
+  console.log('(Use this hash for on-chain signature verification: zcloak-social verify file MANIFEST.sha256)');
 }
 
 /** Compute single file SHA256 hash */
@@ -182,28 +162,46 @@ function cmdInfo(filePath: string | undefined): void {
   console.log(`\nJSON (for signing):\n${JSON.stringify(contentObj, null, 2)}`);
 }
 
-// ========== Main Entry ==========
-function main(): void {
-  const args = parseArgs();
+// ========== Exported run() — called by cli.ts ==========
+
+/**
+ * Entry point when invoked via cli.ts.
+ * Receives a Session instance with pre-parsed arguments.
+ *
+ * Note: doc commands are pure local operations (no canister calls),
+ * so Session is only used for argument parsing here.
+ */
+export function run(session: Session): void {
+  const args = session.args;
   const command = args._args[0];
 
-  switch (command) {
-    case 'manifest':
-      cmdManifest(args._args[1], args);
-      break;
-    case 'verify-manifest':
-      cmdVerifyManifest(args._args[1]);
-      break;
-    case 'hash':
-      cmdHash(args._args[1]);
-      break;
-    case 'info':
-      cmdInfo(args._args[1]);
-      break;
-    default:
-      showHelp();
-      break;
+  try {
+    switch (command) {
+      case 'manifest':
+        cmdManifest(args._args[1], args);
+        break;
+      case 'verify-manifest':
+        cmdVerifyManifest(args._args[1]);
+        break;
+      case 'hash':
+        cmdHash(args._args[1]);
+        break;
+      case 'info':
+        cmdInfo(args._args[1]);
+        break;
+      default:
+        showHelp();
+        break;
+    }
+  } catch (err) {
+    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
   }
 }
 
-main();
+// ========== Standalone Execution Guard ==========
+
+if (require.main === module) {
+  const session = new Session(process.argv);
+  run(session);
+}
