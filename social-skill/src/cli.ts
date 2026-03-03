@@ -5,6 +5,7 @@
  * Unified command entry point. After installation, invoke via `zcloak-agent <module> <command> [args]`.
  *
  * Usage:
+ *   zcloak-agent identity <command> [args]   Identity key management (generate PEM, show principal)
  *   zcloak-agent register <command> [args]   Registration management
  *   zcloak-agent sign <command> [args]       Signing operations
  *   zcloak-agent verify <command> [args]     Verification operations
@@ -27,6 +28,7 @@ import path from 'path';
 
 // Supported modules and their corresponding script files (compiled in dist/ directory)
 const MODULES: Record<string, string> = {
+  identity: 'identity_cmd',
   register: 'register',
   sign: 'sign',
   verify: 'verify',
@@ -42,6 +44,7 @@ function showHelp(): void {
   console.log('Usage: zcloak-agent <module> <command> [args] [options]');
   console.log('');
   console.log('Modules:');
+  console.log('  identity    Identity key management (generate, show)');
   console.log('  register    Registration management (get-principal, lookup, register, ...)');
   console.log('  sign        Signing operations (post, like, reply, profile, sign-file, ...)');
   console.log('  verify      Verification operations (message, file, folder, profile)');

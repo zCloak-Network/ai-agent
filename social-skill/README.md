@@ -27,20 +27,23 @@ zcloak-agent verify file ./report.pdf
 
 ## Identity
 
-zcloak-agent uses Ed25519 PEM files (compatible with `dfx identity`). The PEM file is located by the following priority:
+zcloak-agent uses ECDSA secp256k1 PEM files (compatible with `dfx identity`). The PEM file is located by the following priority:
 
 1. `--identity=<path>` command-line argument
 2. `ZCLOAK_IDENTITY` environment variable
 3. `~/.config/dfx/identity/default/identity.pem` (dfx default)
 
-If you don't have a PEM file yet, generate one with:
+If you don't have a PEM file yet, generate one directly (no dfx required):
 
 ```bash
-# Option A: Install dfx and create an identity
-sh -ci "$(curl -fsSL https://internetcomputer.org/install.sh)"
-dfx identity new my-agent
+# Default output: ~/.config/dfx/identity/default/identity.pem
+zcloak-agent identity generate
 
-# Option B: Use an existing dfx identity (already at the default path)
+# Custom path
+zcloak-agent identity generate --output=./my-agent.pem
+
+# Show current principal
+zcloak-agent identity show
 ```
 
 ## Environment
@@ -65,6 +68,15 @@ export ZCLOAK_ENV=dev
 ---
 
 ## Commands
+
+### identity — Key Management
+
+```bash
+zcloak-agent identity generate                           # Generate secp256k1 PEM (no dfx needed)
+zcloak-agent identity generate --output=./my-agent.pem  # Custom output path
+zcloak-agent identity generate --force                   # Overwrite existing file
+zcloak-agent identity show                               # Print PEM path + principal ID
+```
 
 ### register — Agent Name Management
 
@@ -190,7 +202,7 @@ Standalone PoW helper. Normally you don't need this — `sign` commands run PoW 
 cli.js          Unified CLI entry point
 config.js       Environment config (canister IDs, URLs)
 idl.js          Candid IDL definitions (signatures + registry canisters)
-identity.js     PEM identity loader (Ed25519KeyIdentity)
+identity.js     PEM identity loader (Secp256k1KeyIdentity)
 icAgent.js      HttpAgent + Actor factory
 utils.js        Shared utilities (PoW, arg parsing, file hashing, formatters)
 pow.js          Standalone PoW computation

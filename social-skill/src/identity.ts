@@ -1,8 +1,11 @@
 /**
  * zCloak.ai Identity Management Module
  *
- * Loads Ed25519 identity from dfx-compatible PEM files for signing operations.
+ * Loads ECDSA secp256k1 identity from dfx-compatible PEM files for signing operations.
  * Replaces the original `dfx identity get-principal` and similar commands.
+ *
+ * dfx generates EC PRIVATE KEY (SEC1/PKCS#1 format, OID 1.3.132.0.10 secp256k1),
+ * which is handled by Secp256k1KeyIdentity from @dfinity/identity-secp256k1.
  *
  * PEM file location priority:
  *   1. --identity=<path> command line argument
@@ -13,7 +16,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { Ed25519KeyIdentity } from '@dfinity/identity';
+import { Secp256k1KeyIdentity } from '@dfinity/identity-secp256k1';
 import type { Principal } from '@dfinity/principal';
 
 // ========== PEM File Lookup ==========
@@ -68,88 +71,38 @@ export function getPemPath(): string {
   process.exit(1);
 }
 
-// ========== PEM Parsing ==========
-
-/**
- * Parse Ed25519 private key from PEM file content
- *
- * dfx-generated PEM file format:
- *   -----BEGIN EC PRIVATE KEY-----
- *   <base64 encoded DER data>
- *   -----END EC PRIVATE KEY-----
- *
- * DER structure (PKCS#8 Ed25519):
- *   SEQUENCE {
- *     INTEGER 0
- *     SEQUENCE { OID 1.3.101.112 (Ed25519) }
- *     OCTET STRING { OCTET STRING { <32 bytes private key> } }
- *   }
- *   Total 48 bytes, private key starts at offset 16, length 32 bytes
- *
- * @param pemContent - PEM file content
- * @returns 32-byte Ed25519 private key
- */
-function parsePemToSecretKey(pemContent: string): Uint8Array {
-  // Remove PEM header/footer and all whitespace
-  const base64 = pemContent
-    .replace(/-----BEGIN[^-]*-----/g, '')
-    .replace(/-----END[^-]*-----/g, '')
-    .replace(/\s/g, '');
-
-  if (!base64) {
-    throw new Error('PEM file content is empty or malformed');
-  }
-
-  const der = Buffer.from(base64, 'base64');
-
-  // Ed25519 PKCS#8 DER should be 48 bytes
-  // But some dfx versions may generate slightly different formats, so handle compatibility
-  if (der.length === 48) {
-    // Standard PKCS#8 Ed25519: private key at offset 16, length 32
-    return new Uint8Array(der.slice(16, 48));
-  }
-
-  if (der.length === 34) {
-    // Some formats: directly OCTET STRING { <32 bytes> }
-    return new Uint8Array(der.slice(2, 34));
-  }
-
-  if (der.length === 32) {
-    // Raw 32-byte private key
-    return new Uint8Array(der);
-  }
-
-  // Try to find the embedded 32-byte OCTET STRING in DER
-  // Pattern: 0x04 0x20 followed by 32 bytes
-  for (let i = der.length - 34; i >= 0; i--) {
-    if (der[i] === 0x04 && der[i + 1] === 0x20) {
-      return new Uint8Array(der.slice(i + 2, i + 34));
-    }
-  }
-
-  throw new Error(
-    `Failed to extract Ed25519 private key from DER data (DER length: ${der.length} bytes). ` +
-    'Please ensure the PEM file contains a valid Ed25519 private key.'
-  );
-}
-
 // ========== Identity Management ==========
 
 /** Cached identity instance */
-let _identity: Ed25519KeyIdentity | null = null;
+let _identity: Secp256k1KeyIdentity | null = null;
 
 /**
- * Load Ed25519 identity
- * Loads from PEM file or uses cached instance
+ * Load ECDSA secp256k1 identity from PEM file.
+ *
+ * Uses Secp256k1KeyIdentity.fromPem() which handles the dfx PEM format:
+ *   -----BEGIN EC PRIVATE KEY-----   (SEC1 / RFC 5915 format)
+ *   <base64 encoded DER data>
+ *   -----END EC PRIVATE KEY-----
+ *
+ * The library internally validates the OID (1.3.132.0.10 = secp256k1)
+ * and extracts the 32-byte raw private key from the ASN.1 structure.
+ *
+ * Returns a cached instance on subsequent calls.
  */
-export function loadIdentity(): Ed25519KeyIdentity {
+export function loadIdentity(): Secp256k1KeyIdentity {
   if (_identity) return _identity;
 
   const pemPath = getPemPath();
   const pemContent = fs.readFileSync(pemPath, 'utf-8');
-  const secretKey = parsePemToSecretKey(pemContent);
 
-  _identity = Ed25519KeyIdentity.fromSecretKey(secretKey);
+  try {
+    _identity = Secp256k1KeyIdentity.fromPem(pemContent);
+  } catch (err) {
+    console.error(`Error: failed to load ECDSA secp256k1 identity from ${pemPath}`);
+    console.error((err as Error).message);
+    process.exit(1);
+  }
+
   return _identity;
 }
 
