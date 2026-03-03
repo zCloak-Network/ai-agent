@@ -3,7 +3,7 @@
  * zCloak.ai PoW Computation Tool
  *
  * Finds a nonce such that sha256(base + nonce) starts with a specified number of leading zeros.
- * Can be used as a standalone script, or called internally by other scripts via utils.ts computePow/autoPoW.
+ * Can be used as a standalone script, or called internally by Session.autoPoW() via utils.ts computePow.
  *
  * Usage:
  *   zcloak-social pow <base_string> <zeros>

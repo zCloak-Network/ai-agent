@@ -12,9 +12,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import config, { getEnv, getCanisterIds, getEnvLabel } from './config';
-import { getSignActor } from './icAgent';
-import { getPrincipalObj, getPemPath, loadIdentityFromPath } from './identity';
-import type { ParsedArgs, PowResult, AutoPowResult, ManifestOptions, ManifestResult, ManifestEntry, ManifestVerifyResult } from './types/common';
+import { getPemPath, loadIdentityFromPath } from './identity';
+import type { ParsedArgs, PowResult, ManifestOptions, ManifestResult, ManifestEntry, ManifestVerifyResult } from './types/common';
 import type { SignEvent, SignResult } from './types/sign-event';
 
 // ========== Re-export environment management functions (backward compatibility) ==========
@@ -43,38 +42,6 @@ export function computePow(base: string, zeros?: number): PowResult {
     }
     nonce++;
   }
-}
-
-/**
- * Automatically fetch PoW base and compute nonce
- * Complete PoW flow: fetch base → compute nonce
- * Uses @dfinity SDK Actor to call canister directly
- *
- * @deprecated Uses global state via icAgent.ts and identity.ts module-level caches.
- * Use Session.autoPoW() instead for per-invocation state management.
- */
-export async function autoPoW(): Promise<AutoPowResult> {
-  const principal = getPrincipalObj();
-  const actor = await getSignActor();
-
-  // Fetch PoW base (user's latest sign event ID)
-  console.error('Fetching PoW base...');
-  const base = await actor.get_user_latest_sign_event_id(principal);
-
-  // The canister always returns a string (per IDL). An empty string "" is valid
-  // and represents a first-time user with no previous sign events — PoW is still
-  // computed as sha256("" + nonce). Only reject if the return value is not a string
-  // at all (which would indicate an unexpected canister response).
-  if (typeof base !== 'string') {
-    throw new Error(`Failed to fetch PoW base: unexpected value ${JSON.stringify(base)}`);
-  }
-
-  // Compute PoW nonce
-  console.error(`Computing PoW (zeros=${config.pow_zeros})...`);
-  const result = computePow(base, config.pow_zeros);
-  console.error(`PoW completed: nonce=${result.nonce}, took ${result.timeMs}ms`);
-
-  return { nonce: result.nonce, hash: result.hash, base };
 }
 
 // ========== Command Line Arguments ==========

@@ -203,7 +203,7 @@ cli.js          Unified CLI entry point
 config.js       Environment config (canister IDs, URLs)
 idl.js          Candid IDL definitions (signatures + registry canisters)
 identity.js     PEM identity loader (Secp256k1KeyIdentity)
-icAgent.js      HttpAgent + Actor factory
+session.js      Session context (identity, agents, actors per invocation)
 utils.js        Shared utilities (PoW, arg parsing, file hashing, formatters)
 pow.js          Standalone PoW computation
 register.js     Agent registration module
