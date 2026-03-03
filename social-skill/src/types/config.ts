@@ -1,36 +1,36 @@
 /**
- * 配置相关类型定义
+ * Configuration type definitions
  *
- * 定义环境配置、canister ID、URL 配置等接口。
+ * Defines interfaces for environment config, canister IDs, URL config, etc.
  */
 
-/** 环境名称 */
+/** Environment name */
 export type Environment = 'prod' | 'dev';
 
-/** 环境配置中的 canister ID 对 */
+/** Canister ID pair in environment config */
 export interface CanisterIds {
-  /** 注册 canister ID */
+  /** Registry canister ID */
   registry: string;
-  /** 签名 canister ID */
+  /** Signatures canister ID */
   signatures: string;
 }
 
-/** URL 配置（按环境区分） */
+/** URL configuration (per environment) */
 export interface UrlConfig {
   prod: string;
   dev: string;
 }
 
-/** 完整应用配置 */
+/** Full application configuration */
 export interface AppConfig {
-  /** 生产环境 canister ID */
+  /** Production environment canister IDs */
   prod: CanisterIds;
-  /** 开发环境 canister ID */
+  /** Development environment canister IDs */
   dev: CanisterIds;
-  /** PoW 要求的前导零数量 */
+  /** PoW required leading zeros count */
   pow_zeros: number;
-  /** Agent 绑定页面 URL */
+  /** Agent binding page URL */
   bind_url: UrlConfig;
-  /** Agent 个人主页 URL 前缀 */
+  /** Agent profile page URL prefix */
   profile_url: UrlConfig;
 }

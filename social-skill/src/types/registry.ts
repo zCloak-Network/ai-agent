@@ -1,54 +1,54 @@
 /**
- * 注册 canister 相关类型定义
+ * Registry canister type definitions
  *
- * 对应 registry canister 的 UserProfile、Position 等类型。
+ * Corresponds to UserProfile, Position, and other types in the registry canister.
  */
 
 import type { Principal } from '@dfinity/principal';
 import type { ActorMethod } from '@dfinity/agent';
 import type { CandidOpt } from './sign-event';
 
-/** Position 记录 — 注册 canister 中的位置信息 */
+/** Position record — position information in the registry canister */
 export interface Position {
-  /** 是否为人类 */
+  /** Whether the entity is human */
   is_human: boolean;
-  /** 绑定的 owner principal 列表 */
+  /** Bound owner principal list */
   connection_list: Principal[];
 }
 
-/** AI 档案记录 */
+/** AI profile record */
 export interface AiProfile {
   position: CandidOpt<Position>;
 }
 
-/** 用户档案记录 */
+/** User profile record */
 export interface UserProfile {
-  /** agent 用户名（如 "my-agent#1234.agent"） */
+  /** Agent username (e.g. "my-agent#1234.agent") */
   username: string;
-  /** AI 档案信息 */
+  /** AI profile information */
   ai_profile: CandidOpt<AiProfile>;
-  /** principal ID 文本 */
+  /** Principal ID text */
   principal_id: CandidOpt<string>;
 }
 
-/** 注册成功返回结果 */
+/** Registration success result */
 export interface RegisterResult {
-  /** 分配的完整用户名（含 discriminator） */
+  /** Assigned full username (with discriminator) */
   username: string;
 }
 
-/** Registry canister service 接口 */
+/** Registry canister service interface */
 export interface RegistryService {
-  /** 根据 principal 获取用户名 */
+  /** Get username by principal */
   get_username_by_principal: ActorMethod<[string], CandidOpt<string>>;
-  /** 根据用户名获取 principal */
+  /** Get principal by username */
   get_user_principal: ActorMethod<[string], CandidOpt<Principal>>;
-  /** 根据用户名获取 UserProfile（dev 环境可用） */
+  /** Get UserProfile by username (available in dev environment) */
   user_profile_get: ActorMethod<[string], CandidOpt<UserProfile>>;
-  /** 根据 principal 获取 UserProfile */
+  /** Get UserProfile by principal */
   user_profile_get_by_principal: ActorMethod<[string], CandidOpt<UserProfile>>;
-  /** 注册新 agent name */
+  /** Register new agent name */
   register_agent: ActorMethod<[string], { Ok: RegisterResult } | { Err: string }>;
-  /** 准备 agent-owner 绑定（WebAuthn 挑战） */
+  /** Prepare agent-owner binding (WebAuthn challenge) */
   agent_prepare_bond: ActorMethod<[string], { Ok: string } | { Err: string }>;
 }

@@ -1,82 +1,82 @@
 #!/usr/bin/env node
 /**
- * zCloak.ai Agent-Owner 绑定工具
+ * zCloak.ai Agent-Owner Binding Tool
  *
- * 执行 agent 与 owner 的 WebAuthn/passkey 绑定流程。
- * 自动调用 agent_prepare_bond 并生成浏览器认证 URL。
- * 使用 @dfinity JS SDK 直接与 ICP canister 交互，无需 dfx。
+ * Executes the agent-owner WebAuthn/passkey binding flow.
+ * Automatically calls agent_prepare_bond and generates browser authentication URL.
+ * Uses @dfinity JS SDK to interact directly with ICP canister, no dfx required.
  *
- * 用法:
- *   zcloak-agent bind prepare <user_principal>     准备绑定并生成认证 URL
+ * Usage:
+ *   zcloak-agent bind prepare <user_principal>     Prepare binding and generate authentication URL
  *
- * 所有命令支持 --env=dev 切换环境。
- * 所有命令支持 --identity=<pem_path> 指定身份文件。
+ * All commands support --env=dev to switch environments.
+ * All commands support --identity=<pem_path> to specify identity file.
  */
 
 import { getEnv, parseArgs } from './utils';
 import config from './config';
 import { getRegistryActor } from './icAgent';
 
-// ========== 帮助信息 ==========
+// ========== Help Information ==========
 function showHelp(): void {
-  console.log('zCloak.ai Agent-Owner 绑定工具');
+  console.log('zCloak.ai Agent-Owner Binding Tool');
   console.log('');
-  console.log('用法:');
-  console.log('  zcloak-agent bind prepare <user_principal>     准备绑定并生成认证 URL');
+  console.log('Usage:');
+  console.log('  zcloak-agent bind prepare <user_principal>     Prepare binding and generate authentication URL');
   console.log('');
-  console.log('选项:');
-  console.log('  --env=prod|dev            选择环境（默认 prod）');
-  console.log('  --identity=<pem_path>     指定身份 PEM 文件');
+  console.log('Options:');
+  console.log('  --env=prod|dev            Select environment (default: prod)');
+  console.log('  --identity=<pem_path>     Specify identity PEM file');
   console.log('');
-  console.log('流程:');
-  console.log('  1. 脚本调用 agent_prepare_bond 获取 WebAuthn 挑战');
-  console.log('  2. 脚本生成认证 URL');
-  console.log('  3. 用户在浏览器中打开 URL 并用 passkey 完成认证');
+  console.log('Flow:');
+  console.log('  1. Script calls agent_prepare_bond to get WebAuthn challenge');
+  console.log('  2. Script generates authentication URL');
+  console.log('  3. User opens the URL in browser and completes authentication with passkey');
   console.log('');
-  console.log('示例:');
+  console.log('Examples:');
   console.log('  zcloak-agent bind prepare "57odc-ymip7-b7edu-aevpq-nu54m-q4paq-vsrtd-nlnmm-lkos3-d4h3t-7qe"');
 }
 
-// ========== 命令实现 ==========
+// ========== Command Implementations ==========
 
-/** 准备绑定并生成认证 URL */
+/** Prepare binding and generate authentication URL */
 async function cmdPrepare(userPrincipal: string | undefined): Promise<void> {
   if (!userPrincipal) {
-    console.error('错误: 需要提供 user principal ID');
-    console.error('用法: zcloak-agent bind prepare <user_principal>');
+    console.error('Error: user principal ID is required');
+    console.error('Usage: zcloak-agent bind prepare <user_principal>');
     process.exit(1);
   }
 
   const env = getEnv();
   const bindBase = config.bind_url[env];
 
-  // Step 1: 调用 agent_prepare_bond（需要身份，update call）
-  console.error('正在调用 agent_prepare_bond...');
+  // Step 1: Call agent_prepare_bond (requires identity, update call)
+  console.error('Calling agent_prepare_bond...');
   const actor = await getRegistryActor();
   const result = await actor.agent_prepare_bond(userPrincipal);
 
-  // 检查返回结果 — variant { Ok: text } | { Err: text }
+  // Check return result — variant { Ok: text } | { Err: text }
   if ('Err' in result) {
-    console.error('绑定准备失败:');
+    console.error('Binding preparation failed:');
     console.log(`(variant { Err = "${result.Err}" })`);
     process.exit(1);
   }
 
-  // Step 2: 提取 JSON 并生成 URL
+  // Step 2: Extract JSON and generate URL
   const authContent = result.Ok;
 
-  // Step 3: 构建 URL
+  // Step 3: Build URL
   const url = `${bindBase}?auth_content=${encodeURIComponent(authContent)}`;
 
   console.log('');
-  console.log('=== 绑定认证 URL ===');
+  console.log('=== Binding Authentication URL ===');
   console.log('');
   console.log(url);
   console.log('');
-  console.log('请在浏览器中打开上述 URL，并使用 passkey 完成认证。');
+  console.log('Please open the URL above in your browser and complete authentication with passkey.');
 }
 
-// ========== 主入口 ==========
+// ========== Main Entry ==========
 async function main(): Promise<void> {
   const args = parseArgs();
   const command = args._args[0];
@@ -91,7 +91,7 @@ async function main(): Promise<void> {
         break;
     }
   } catch (err) {
-    console.error(`操作失败: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

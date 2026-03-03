@@ -1,72 +1,72 @@
 #!/usr/bin/env node
 /**
- * zCloak.ai Agent 注册管理脚本
+ * zCloak.ai Agent Registration Management Script
  *
- * 提供 agent name 的查询、注册、以及 owner 关系查询功能。
- * 使用 @dfinity JS SDK 直接与 ICP canister 交互，无需 dfx。
+ * Provides agent name query, registration, and owner relationship query functions.
+ * Uses @dfinity JS SDK to interact directly with ICP canister, no dfx required.
  *
- * 用法:
- *   zcloak-agent register get-principal                         获取当前身份的 principal ID
- *   zcloak-agent register lookup                                查询当前 principal 的 agent name
- *   zcloak-agent register lookup-by-name <agent_name>           按 agent name 查询 principal
- *   zcloak-agent register lookup-by-principal <principal>        按 principal 查询 agent name
- *   zcloak-agent register register <base_name>                  注册新 agent name
- *   zcloak-agent register get-owner <principal>                  查询 agent 的 owner（绑定关系）
+ * Usage:
+ *   zcloak-agent register get-principal                         Get current identity's principal ID
+ *   zcloak-agent register lookup                                Query current principal's agent name
+ *   zcloak-agent register lookup-by-name <agent_name>           Look up principal by agent name
+ *   zcloak-agent register lookup-by-principal <principal>        Look up agent name by principal
+ *   zcloak-agent register register <base_name>                  Register new agent name
+ *   zcloak-agent register get-owner <principal>                  Query agent's owner (binding relationship)
  *
- * 所有命令支持 --env=dev 切换到开发环境，默认 prod。
- * 所有命令支持 --identity=<pem_path> 指定身份文件。
+ * All commands support --env=dev to switch to dev environment, default: prod.
+ * All commands support --identity=<pem_path> to specify identity file.
  */
 
 import { getEnv, parseArgs, formatOptText } from './utils';
 import { getPrincipal } from './identity';
 import { getAnonymousRegistryActor, getRegistryActor } from './icAgent';
 
-// ========== 帮助信息 ==========
+// ========== Help Information ==========
 function showHelp(): void {
-  console.log('zCloak.ai Agent 注册管理');
+  console.log('zCloak.ai Agent Registration Management');
   console.log('');
-  console.log('用法:');
-  console.log('  zcloak-agent register get-principal                      获取当前 principal ID');
-  console.log('  zcloak-agent register lookup                             查询当前 principal 的 agent name');
-  console.log('  zcloak-agent register lookup-by-name <agent_name>        按 agent name 查询 principal');
-  console.log('  zcloak-agent register lookup-by-principal <principal>     按 principal 查询 agent name');
-  console.log('  zcloak-agent register register <base_name>               注册新 agent name');
-  console.log('  zcloak-agent register get-owner <principal>               查询 agent 的 owner');
+  console.log('Usage:');
+  console.log('  zcloak-agent register get-principal                      Get current principal ID');
+  console.log('  zcloak-agent register lookup                             Query current principal\'s agent name');
+  console.log('  zcloak-agent register lookup-by-name <agent_name>        Look up principal by agent name');
+  console.log('  zcloak-agent register lookup-by-principal <principal>     Look up agent name by principal');
+  console.log('  zcloak-agent register register <base_name>               Register new agent name');
+  console.log('  zcloak-agent register get-owner <principal>               Query agent\'s owner');
   console.log('');
-  console.log('选项:');
-  console.log('  --env=prod|dev            选择环境（默认 prod）');
-  console.log('  --identity=<pem_path>     指定身份 PEM 文件');
+  console.log('Options:');
+  console.log('  --env=prod|dev            Select environment (default: prod)');
+  console.log('  --identity=<pem_path>     Specify identity PEM file');
   console.log('');
-  console.log('示例:');
+  console.log('Examples:');
   console.log('  zcloak-agent register get-principal');
   console.log('  zcloak-agent register lookup --env=dev');
   console.log('  zcloak-agent register register my-agent');
   console.log('  zcloak-agent register lookup-by-name "runner#8939.agent"');
 }
 
-// ========== 命令实现 ==========
+// ========== Command Implementations ==========
 
-/** 获取当前身份的 principal ID（从 PEM 文件读取） */
+/** Get current identity's principal ID (read from PEM file) */
 function cmdGetPrincipal(): void {
   const principal = getPrincipal();
   console.log(principal);
 }
 
-/** 查询当前 principal 的 agent name */
+/** Query current principal's agent name */
 async function cmdLookup(): Promise<void> {
   const principal = getPrincipal();
-  console.error(`当前 principal: ${principal}`);
+  console.error(`Current principal: ${principal}`);
 
   const actor = await getAnonymousRegistryActor();
   const result = await actor.get_username_by_principal(principal);
   console.log(formatOptText(result));
 }
 
-/** 按 principal 查询 agent name */
+/** Look up agent name by principal */
 async function cmdLookupByPrincipal(principal: string | undefined): Promise<void> {
   if (!principal) {
-    console.error('错误: 需要提供 principal ID');
-    console.error('用法: zcloak-agent register lookup-by-principal <principal>');
+    console.error('Error: principal ID is required');
+    console.error('Usage: zcloak-agent register lookup-by-principal <principal>');
     process.exit(1);
   }
 
@@ -75,18 +75,18 @@ async function cmdLookupByPrincipal(principal: string | undefined): Promise<void
   console.log(formatOptText(result));
 }
 
-/** 按 agent name 查询 principal */
+/** Look up principal by agent name */
 async function cmdLookupByName(agentName: string | undefined): Promise<void> {
   if (!agentName) {
-    console.error('错误: 需要提供 agent name');
-    console.error('用法: zcloak-agent register lookup-by-name <agent_name>');
+    console.error('Error: agent name is required');
+    console.error('Usage: zcloak-agent register lookup-by-name <agent_name>');
     process.exit(1);
   }
 
   const actor = await getAnonymousRegistryActor();
   const result = await actor.get_user_principal(agentName);
 
-  // opt Principal → 输出文本格式
+  // opt Principal → output text format
   if (result && result.length > 0) {
     const principal = result[0]!;
     console.log(`(opt principal "${principal.toText()}")`);
@@ -95,18 +95,18 @@ async function cmdLookupByName(agentName: string | undefined): Promise<void> {
   }
 }
 
-/** 注册新 agent name（需要身份，update call） */
+/** Register new agent name (requires identity, update call) */
 async function cmdRegister(baseName: string | undefined): Promise<void> {
   if (!baseName) {
-    console.error('错误: 需要提供 base name');
-    console.error('用法: zcloak-agent register register <base_name>');
+    console.error('Error: base name is required');
+    console.error('Usage: zcloak-agent register register <base_name>');
     process.exit(1);
   }
 
   const actor = await getRegistryActor();
   const result = await actor.register_agent(baseName);
 
-  // 输出 variant { Ok = record { ... } } 或 { Err = "..." }
+  // Output variant { Ok = record { ... } } or { Err = "..." }
   if ('Ok' in result) {
     console.log(`(variant { Ok = record { username = "${result.Ok.username}" } })`);
   } else if ('Err' in result) {
@@ -116,45 +116,45 @@ async function cmdRegister(baseName: string | undefined): Promise<void> {
   }
 }
 
-/** 查询 agent 的 owner（绑定关系） */
+/** Query agent's owner (binding relationship) */
 async function cmdGetOwner(principalOrName: string | undefined): Promise<void> {
   if (!principalOrName) {
-    console.error('错误: 需要提供 principal 或 agent name');
-    console.error('用法: zcloak-agent register get-owner <principal_or_agent_name>');
+    console.error('Error: principal or agent name is required');
+    console.error('Usage: zcloak-agent register get-owner <principal_or_agent_name>');
     process.exit(1);
   }
 
   const env = getEnv();
   const actor = await getAnonymousRegistryActor();
 
-  // 判断是 principal 还是 agent name（agent name 包含 # 和 .agent）
+  // Determine if it's a principal or agent name (agent name contains # and .agent)
   const isAgentName = principalOrName.includes('#') && principalOrName.includes('.agent');
 
   let profile;
 
   if (isAgentName && env === 'dev') {
-    // dev 环境支持 user_profile_get（按 agent name 直接查）
+    // dev environment supports user_profile_get (query by agent name directly)
     profile = await actor.user_profile_get(principalOrName);
   } else if (isAgentName && env === 'prod') {
-    // prod 环境没有 user_profile_get，需要先通过 name 查到 principal，再查 profile
-    console.error('prod 环境: 先通过 agent name 查询 principal...');
+    // prod environment doesn't have user_profile_get, need to look up principal by name first, then query profile
+    console.error('prod environment: looking up principal by agent name...');
     const principalResult = await actor.get_user_principal(principalOrName);
 
     if (!principalResult || principalResult.length === 0) {
-      console.error(`未找到 agent name "${principalOrName}" 对应的 principal`);
+      console.error(`No principal found for agent name "${principalOrName}"`);
       console.log('(null)');
       process.exit(1);
     }
 
     const resolvedPrincipal = principalResult[0].toText();
-    console.error(`找到 principal: ${resolvedPrincipal}`);
+    console.error(`Found principal: ${resolvedPrincipal}`);
     profile = await actor.user_profile_get_by_principal(resolvedPrincipal);
   } else {
-    // 按 principal 直接查询
+    // Query by principal directly
     profile = await actor.user_profile_get_by_principal(principalOrName);
   }
 
-  // 格式化输出 UserProfile
+  // Format output UserProfile
   if (profile && profile.length > 0) {
     const p = profile[0]!;
     const lines: string[] = [];
@@ -181,7 +181,7 @@ async function cmdGetOwner(principalOrName: string | undefined): Promise<void> {
   }
 }
 
-// ========== 主入口 ==========
+// ========== Main Entry ==========
 async function main(): Promise<void> {
   const args = parseArgs();
   const command = args._args[0];
@@ -211,7 +211,7 @@ async function main(): Promise<void> {
         break;
     }
   } catch (err) {
-    console.error(`操作失败: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

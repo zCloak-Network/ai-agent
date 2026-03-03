@@ -1,51 +1,51 @@
 /**
- * 通用工具类型定义
+ * Common utility type definitions
  *
- * 包含命令行参数、PoW 结果、MANIFEST 等公共类型。
+ * Contains public types for command line arguments, PoW results, MANIFEST, etc.
  */
 
-/** 命令行参数解析结果 */
+/** Command line argument parsing result */
 export interface ParsedArgs {
-  /** 位置参数（非 -- 开头的参数） */
+  /** Positional arguments (arguments not starting with --) */
   _args: string[];
-  /** 命名参数（--key=value 或 --flag） */
+  /** Named arguments (--key=value or --flag) */
   [key: string]: string | boolean | string[];
 }
 
-/** PoW 计算结果 */
+/** PoW computation result */
 export interface PowResult {
-  /** 找到的 nonce 值 */
+  /** Found nonce value */
   nonce: number;
-  /** 满足条件的哈希值 */
+  /** Hash that satisfies the condition */
   hash: string;
-  /** 计算耗时（毫秒） */
+  /** Computation time (milliseconds) */
   timeMs: number;
 }
 
-/** AutoPoW 返回结果（含 base） */
+/** AutoPoW return result (includes base) */
 export interface AutoPowResult {
-  /** 找到的 nonce 值 */
+  /** Found nonce value */
   nonce: number;
-  /** 满足条件的哈希值 */
+  /** Hash that satisfies the condition */
   hash: string;
-  /** PoW 基础字符串 */
+  /** PoW base string */
   base: string;
 }
 
-/** MANIFEST 生成选项 */
+/** MANIFEST generation options */
 export interface ManifestOptions {
-  /** 版本号，默认 "1.0.0" */
+  /** Version number, default "1.0.0" */
   version?: string;
 }
 
-/** MANIFEST 生成结果 */
+/** MANIFEST generation result */
 export interface ManifestResult {
-  /** MANIFEST.sha256 文件路径 */
+  /** MANIFEST.sha256 file path */
   manifestPath: string;
-  /** MANIFEST 文件自身的 SHA256 哈希 */
+  /** SHA256 hash of the MANIFEST file itself */
   manifestHash: string;
-  /** MANIFEST 文件大小（字节） */
+  /** MANIFEST file size (bytes) */
   manifestSize: number;
-  /** 包含的文件数量 */
+  /** Number of files included */
   fileCount: number;
 }

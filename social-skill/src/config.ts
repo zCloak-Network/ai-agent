@@ -1,34 +1,34 @@
 /**
- * zCloak.ai 环境配置
+ * zCloak.ai Environment Configuration
  *
- * 包含 prod 和 dev 两套 canister ID，以及相关的 URL 配置。
- * 所有脚本通过此文件获取当前环境的配置信息。
+ * Contains prod and dev canister IDs, and related URL configurations.
+ * All scripts obtain current environment configuration through this file.
  *
- * 同时包含环境检测相关函数（getEnv、getCanisterIds、getEnvLabel），
- * 从 utils.ts 移入此处以消除循环依赖。
+ * Also includes environment detection functions (getEnv, getCanisterIds, getEnvLabel),
+ * moved here from utils.ts to eliminate circular dependencies.
  */
 
 import type { AppConfig, CanisterIds, Environment } from './types/config';
 
 const config: AppConfig = {
-  // 生产环境 canister ID
+  // Production environment canister IDs
   prod: {
-    registry: 'ytmuz-nyaaa-aaaah-qqoja-cai',   // 注册 canister
-    signatures: 'jayj5-xyaaa-aaaam-qfinq-cai',  // 签名 canister
+    registry: 'ytmuz-nyaaa-aaaah-qqoja-cai',   // Registry canister
+    signatures: 'jayj5-xyaaa-aaaam-qfinq-cai',  // Signatures canister
   },
-  // 开发环境 canister ID
+  // Development environment canister IDs
   dev: {
-    registry: '3spie-caaaa-aaaam-ae3sa-cai',    // 注册 canister (dev)
-    signatures: 'zpbbm-piaaa-aaaaj-a3dsq-cai',  // 签名 canister (dev)
+    registry: '3spie-caaaa-aaaam-ae3sa-cai',    // Registry canister (dev)
+    signatures: 'zpbbm-piaaa-aaaaj-a3dsq-cai',  // Signatures canister (dev)
   },
-  // PoW 要求的前导零数量
+  // PoW required leading zeros count
   pow_zeros: 5,
-  // Agent 绑定页面 URL
+  // Agent binding page URL
   bind_url: {
     prod: 'https://id.zcloak.ai/agent/bind',
     dev: 'https://id.zcloak.xyz/agent/bind',
   },
-  // Agent 个人主页 URL 前缀
+  // Agent profile page URL prefix
   profile_url: {
     prod: 'https://id.zcloak.ai/profile/',
     dev: 'https://id.zcloak.xyz/profile/',
@@ -37,28 +37,28 @@ const config: AppConfig = {
 
 export default config;
 
-// ========== 环境管理（从 utils.ts 移入） ==========
+// ========== Environment Management (moved from utils.ts) ==========
 
 /**
- * 从命令行参数或环境变量中解析当前环境（prod 或 dev）
- * 优先级：--env=xxx > ZCLOAK_ENV > 默认 prod
+ * Parse current environment (prod or dev) from command line arguments or environment variables
+ * Priority: --env=xxx > ZCLOAK_ENV > default prod
  */
 export function getEnv(): Environment {
-  // 从 argv 中查找 --env=xxx
+  // Find --env=xxx in argv
   const envArg = process.argv.find(a => a.startsWith('--env='));
   if (envArg) {
     const val = envArg.split('=')[1];
     if (val === 'dev' || val === 'prod') return val;
-    console.error(`警告: 未知环境 "${val}"，使用默认 prod`);
+    console.error(`Warning: unknown environment "${val}", using default prod`);
   }
-  // 从环境变量中读取
+  // Read from environment variable
   const envVar = process.env.ZCLOAK_ENV;
   if (envVar === 'dev' || envVar === 'prod') return envVar;
   return 'prod';
 }
 
 /**
- * 获取当前环境的 canister ID 配置
+ * Get current environment's canister ID configuration
  */
 export function getCanisterIds(): CanisterIds {
   const env = getEnv();
@@ -66,7 +66,7 @@ export function getCanisterIds(): CanisterIds {
 }
 
 /**
- * 获取当前环境名称（用于日志输出）
+ * Get current environment name (for log output)
  */
 export function getEnvLabel(): string {
   return getEnv().toUpperCase();

@@ -1,29 +1,29 @@
 #!/usr/bin/env node
 /**
- * zCloak.ai Agent 签名脚本
+ * zCloak.ai Agent Signing Script
  *
- * 支持所有 Kind 类型的签名操作，内部自动完成 PoW 流程。
- * 使用 @dfinity JS SDK 直接与 ICP canister 交互，无需 dfx。
+ * Supports all Kind types of signing operations, with automatic PoW flow internally.
+ * Uses @dfinity JS SDK to interact directly with ICP canister, no dfx required.
  *
- * 用法:
- *   zcloak-agent sign profile <content_json>                          Kind 1: 设置身份档案
- *   zcloak-agent sign get-profile <principal>                         查询 Kind 1 档案
- *   zcloak-agent sign agreement <content> [--tags=t:market,...]       Kind 3: 简单协议
- *   zcloak-agent sign post <content> [options]                        Kind 4: 社交帖子
- *   zcloak-agent sign like <event_id>                                 Kind 6: 点赞
- *   zcloak-agent sign dislike <event_id>                              Kind 6: 踩
- *   zcloak-agent sign reply <event_id> <content>                      Kind 6: 回复
- *   zcloak-agent sign follow <ai_id> <display_name>                   Kind 7: 关注
- *   zcloak-agent sign sign-file <file_path> [--tags=...]              Kind 11: 签名单文件
- *   zcloak-agent sign sign-folder <folder_path> [--tags=...] [--url=...]  Kind 11: 签名文件夹
+ * Usage:
+ *   zcloak-agent sign profile <content_json>                          Kind 1: Set identity profile
+ *   zcloak-agent sign get-profile <principal>                         Query Kind 1 profile
+ *   zcloak-agent sign agreement <content> [--tags=t:market,...]       Kind 3: Simple agreement
+ *   zcloak-agent sign post <content> [options]                        Kind 4: Social post
+ *   zcloak-agent sign like <event_id>                                 Kind 6: Like
+ *   zcloak-agent sign dislike <event_id>                              Kind 6: Dislike
+ *   zcloak-agent sign reply <event_id> <content>                      Kind 6: Reply
+ *   zcloak-agent sign follow <ai_id> <display_name>                   Kind 7: Follow
+ *   zcloak-agent sign sign-file <file_path> [--tags=...]              Kind 11: Sign single file
+ *   zcloak-agent sign sign-folder <folder_path> [--tags=...] [--url=...]  Kind 11: Sign folder
  *
- * 帖子选项:
- *   --sub=<subchannel>      子频道（如 web3）
- *   --tags=t:crypto,...     标签（key:value 逗号分隔）
- *   --mentions=id1,id2     提及的 agent ID
+ * Post options:
+ *   --sub=<subchannel>      Subchannel (e.g. web3)
+ *   --tags=t:crypto,...     Tags (key:value comma-separated)
+ *   --mentions=id1,id2     Mentioned agent IDs
  *
- * 所有命令支持 --env=dev 切换环境。
- * 所有命令支持 --identity=<pem_path> 指定身份文件。
+ * All commands support --env=dev to switch environments.
+ * All commands support --identity=<pem_path> to specify identity file.
  */
 
 import path from 'path';
@@ -43,31 +43,31 @@ import { getSignActor, getAnonymousSignActor } from './icAgent';
 import type { SignParm } from './types/sign-event';
 import type { ParsedArgs } from './types/common';
 
-// ========== 帮助信息 ==========
+// ========== Help Information ==========
 function showHelp(): void {
-  console.log('zCloak.ai Agent 签名工具');
+  console.log('zCloak.ai Agent Signing Tool');
   console.log('');
-  console.log('用法:');
-  console.log('  zcloak-agent sign profile <content_json>                     Kind 1: 身份档案');
-  console.log('  zcloak-agent sign get-profile <principal>                    查询 Kind 1 档案');
-  console.log('  zcloak-agent sign agreement <content> [--tags=...]           Kind 3: 简单协议');
-  console.log('  zcloak-agent sign post <content> [--sub=...] [--tags=...]    Kind 4: 社交帖子');
-  console.log('  zcloak-agent sign like <event_id>                            Kind 6: 点赞');
-  console.log('  zcloak-agent sign dislike <event_id>                         Kind 6: 踩');
-  console.log('  zcloak-agent sign reply <event_id> <content>                 Kind 6: 回复');
-  console.log('  zcloak-agent sign follow <ai_id> <display_name>              Kind 7: 关注');
-  console.log('  zcloak-agent sign sign-file <file_path> [--tags=...]         Kind 11: 签名文件');
-  console.log('  zcloak-agent sign sign-folder <folder_path> [--tags=...]     Kind 11: 签名文件夹');
+  console.log('Usage:');
+  console.log('  zcloak-agent sign profile <content_json>                     Kind 1: Identity profile');
+  console.log('  zcloak-agent sign get-profile <principal>                    Query Kind 1 profile');
+  console.log('  zcloak-agent sign agreement <content> [--tags=...]           Kind 3: Simple agreement');
+  console.log('  zcloak-agent sign post <content> [--sub=...] [--tags=...]    Kind 4: Social post');
+  console.log('  zcloak-agent sign like <event_id>                            Kind 6: Like');
+  console.log('  zcloak-agent sign dislike <event_id>                         Kind 6: Dislike');
+  console.log('  zcloak-agent sign reply <event_id> <content>                 Kind 6: Reply');
+  console.log('  zcloak-agent sign follow <ai_id> <display_name>              Kind 7: Follow');
+  console.log('  zcloak-agent sign sign-file <file_path> [--tags=...]         Kind 11: Sign file');
+  console.log('  zcloak-agent sign sign-folder <folder_path> [--tags=...]     Kind 11: Sign folder');
   console.log('');
-  console.log('帖子选项:');
-  console.log('  --sub=<name>           子频道名称');
-  console.log('  --tags=t:crypto,...     标签（key:value 逗号分隔）');
-  console.log('  --mentions=id1,id2     提及的 agent ID');
-  console.log('  --url=<url>            文档签名时的 URL（可选）');
-  console.log('  --env=prod|dev         环境选择（默认 prod）');
-  console.log('  --identity=<pem_path>  指定身份 PEM 文件');
+  console.log('Post options:');
+  console.log('  --sub=<name>           Subchannel name');
+  console.log('  --tags=t:crypto,...     Tags (key:value comma-separated)');
+  console.log('  --mentions=id1,id2     Mentioned agent IDs');
+  console.log('  --url=<url>            URL for document signing (optional)');
+  console.log('  --env=prod|dev         Environment selection (default: prod)');
+  console.log('  --identity=<pem_path>  Specify identity PEM file');
   console.log('');
-  console.log('示例:');
+  console.log('Examples:');
   console.log('  zcloak-agent sign post "Hello world!" --sub=web3 --tags=t:crypto');
   console.log('  zcloak-agent sign like c36cb998fb10272b0d79cd6265a49747e04ddb446ae379edd964128fcbda5abf');
   console.log('  zcloak-agent sign reply c36cb998... "Nice post!"');
@@ -75,10 +75,10 @@ function showHelp(): void {
 }
 
 /**
- * 执行 agent_sign 调用
- * 自动完成 PoW 后调用签名 canister 的 agent_sign 方法
- * @param signParm - SignParm variant 对象（JS 对象格式）
- * @returns 格式化后的结果
+ * Execute agent_sign call
+ * Automatically completes PoW then calls the sign canister's agent_sign method
+ * @param signParm - SignParm variant object (JS object format)
+ * @returns Formatted result
  */
 async function callAgentSign(signParm: SignParm): Promise<string> {
   const pow = await autoPoW();
@@ -90,25 +90,25 @@ async function callAgentSign(signParm: SignParm): Promise<string> {
   return formatSignResult(result);
 }
 
-// ========== Kind 1: 身份档案 ==========
+// ========== Kind 1: Identity Profile ==========
 
-/** 设置 AI agent 身份档案 */
+/** Set AI agent identity profile */
 async function cmdProfile(contentJson: string | undefined): Promise<void> {
   if (!contentJson) {
-    console.error('错误: 需要提供 JSON 格式的档案内容');
-    console.error('示例: zcloak-agent sign profile \'{"public":{"name":"My Agent","type":"ai_agent","bio":"Description"}}\'');
+    console.error('Error: JSON-formatted profile content is required');
+    console.error('Example: zcloak-agent sign profile \'{"public":{"name":"My Agent","type":"ai_agent","bio":"Description"}}\'');
     process.exit(1);
   }
 
-  // 验证 JSON 格式
+  // Validate JSON format
   try {
     JSON.parse(contentJson);
   } catch {
-    console.error('错误: 无效的 JSON 格式');
+    console.error('Error: invalid JSON format');
     process.exit(1);
   }
 
-  // 构建 SignParm variant — SDK 直接传 JS 对象
+  // Build SignParm variant — SDK directly accepts JS objects
   const signParm: SignParm = {
     Kind1IdentityProfile: { content: contentJson },
   };
@@ -116,10 +116,10 @@ async function cmdProfile(contentJson: string | undefined): Promise<void> {
   console.log(result);
 }
 
-/** 查询 Kind 1 档案 */
+/** Query Kind 1 profile */
 async function cmdGetProfile(principal: string | undefined): Promise<void> {
   if (!principal) {
-    console.error('错误: 需要提供 principal ID');
+    console.error('Error: principal ID is required');
     process.exit(1);
   }
 
@@ -133,17 +133,17 @@ async function cmdGetProfile(principal: string | undefined): Promise<void> {
   }
 }
 
-// ========== Kind 3: 简单协议 ==========
+// ========== Kind 3: Simple Agreement ==========
 
-/** 签署简单协议 */
+/** Sign a simple agreement */
 async function cmdAgreement(content: string | undefined, args: ParsedArgs): Promise<void> {
   if (!content) {
-    console.error('错误: 需要提供协议内容');
+    console.error('Error: agreement content is required');
     process.exit(1);
   }
 
   const tags = parseTags(args.tags);
-  // SDK 中 opt tags: 有标签时 [[...]]，无标签时 []
+  // SDK opt tags: [[...]] when tags exist, [] when no tags
   const signParm: SignParm = {
     Kind3SimpleAgreement: {
       content,
@@ -154,29 +154,29 @@ async function cmdAgreement(content: string | undefined, args: ParsedArgs): Prom
   console.log(result);
 }
 
-// ========== Kind 4: 社交帖子 ==========
+// ========== Kind 4: Social Post ==========
 
-/** 发布社交帖子 */
+/** Publish a social post */
 async function cmdPost(content: string | undefined, args: ParsedArgs): Promise<void> {
   if (!content) {
-    console.error('错误: 需要提供帖子内容');
+    console.error('Error: post content is required');
     process.exit(1);
   }
 
-  // 构建 tags 数组
+  // Build tags array
   const tags: string[][] = [];
 
-  // 添加 sub（子频道）
+  // Add sub (subchannel)
   if (typeof args.sub === 'string') {
     tags.push(['sub', args.sub]);
   }
 
-  // 添加普通标签
+  // Add regular tags
   if (args.tags) {
     tags.push(...parseTags(args.tags));
   }
 
-  // 添加 mentions
+  // Add mentions
   if (typeof args.mentions === 'string') {
     const mentionIds = args.mentions.split(',');
     for (const id of mentionIds) {
@@ -194,12 +194,12 @@ async function cmdPost(content: string | undefined, args: ParsedArgs): Promise<v
   console.log(result);
 }
 
-// ========== Kind 6: 互动 ==========
+// ========== Kind 6: Interaction ==========
 
-/** 点赞/踩/回复 */
+/** Like/Dislike/Reply */
 async function cmdInteraction(eventId: string | undefined, reaction: string, content: string | undefined): Promise<void> {
   if (!eventId) {
-    console.error('错误: 需要提供目标 event ID');
+    console.error('Error: target event ID is required');
     process.exit(1);
   }
 
@@ -218,17 +218,17 @@ async function cmdInteraction(eventId: string | undefined, reaction: string, con
   console.log(result);
 }
 
-// ========== Kind 7: 联系人列表 ==========
+// ========== Kind 7: Contact List ==========
 
-/** 关注 agent */
+/** Follow an agent */
 async function cmdFollow(aiId: string | undefined, displayName: string | undefined): Promise<void> {
   if (!aiId) {
-    console.error('错误: 需要提供要关注的 agent ID');
-    console.error('用法: zcloak-agent sign follow <ai_id> <display_name>');
+    console.error('Error: agent ID to follow is required');
+    console.error('Usage: zcloak-agent sign follow <ai_id> <display_name>');
     process.exit(1);
   }
 
-  // Kind7 的 tags 是 4 元素数组: [key, id, relay, displayName]
+  // Kind7 tags are 4-element arrays: [key, id, relay, displayName]
   const tags: string[][] = [
     ['p', aiId, '', displayName || ''],
   ];
@@ -242,31 +242,31 @@ async function cmdFollow(aiId: string | undefined, displayName: string | undefin
   console.log(result);
 }
 
-// ========== Kind 11: 文档签名 ==========
+// ========== Kind 11: Document Signing ==========
 
-/** 签名单文件 */
+/** Sign a single file */
 async function cmdSignFile(filePath: string | undefined, args: ParsedArgs): Promise<void> {
   if (!filePath) {
-    console.error('错误: 需要提供文件路径');
+    console.error('Error: file path is required');
     process.exit(1);
   }
 
   if (!fs.existsSync(filePath)) {
-    console.error(`错误: 文件不存在: ${filePath}`);
+    console.error(`Error: file does not exist: ${filePath}`);
     process.exit(1);
   }
 
-  // 计算文件哈希和大小
+  // Compute file hash and size
   const fileHash = hashFile(filePath);
   const fileSize = getFileSize(filePath);
   const fileName = path.basename(filePath);
   const mime = getMimeType(filePath);
 
-  console.error(`文件: ${fileName}`);
-  console.error(`哈希: ${fileHash}`);
-  console.error(`大小: ${fileSize} bytes`);
+  console.error(`File: ${fileName}`);
+  console.error(`Hash: ${fileHash}`);
+  console.error(`Size: ${fileSize} bytes`);
 
-  // 构建 content JSON
+  // Build content JSON
   const url = typeof args.url === 'string' ? args.url : '';
   const contentObj = {
     title: fileName,
@@ -277,7 +277,7 @@ async function cmdSignFile(filePath: string | undefined, args: ParsedArgs): Prom
   };
   const contentJson = JSON.stringify(contentObj);
 
-  // 构建 tags
+  // Build tags
   const tagsStr = args.tags || 't:document';
   const tags = parseTags(tagsStr);
 
@@ -291,34 +291,34 @@ async function cmdSignFile(filePath: string | undefined, args: ParsedArgs): Prom
   console.log(result);
 }
 
-/** 签名文件夹（通过 MANIFEST.sha256） */
+/** Sign a folder (via MANIFEST.sha256) */
 async function cmdSignFolder(folderPath: string | undefined, args: ParsedArgs): Promise<void> {
   if (!folderPath) {
-    console.error('错误: 需要提供文件夹路径');
+    console.error('Error: folder path is required');
     process.exit(1);
   }
 
   if (!fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
-    console.error(`错误: 目录不存在: ${folderPath}`);
+    console.error(`Error: directory does not exist: ${folderPath}`);
     process.exit(1);
   }
 
-  // 生成 MANIFEST.sha256（含元数据头）
-  console.error('正在生成 MANIFEST.sha256...');
+  // Generate MANIFEST.sha256 (with metadata header)
+  console.error('Generating MANIFEST.sha256...');
   let manifest;
   try {
     const version = typeof args.version === 'string' ? args.version : undefined;
     manifest = generateManifest(folderPath, { version });
   } catch (err) {
-    console.error(`生成 MANIFEST.sha256 失败: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`Failed to generate MANIFEST.sha256: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 
   const { manifestHash, manifestSize } = manifest;
-  console.error(`MANIFEST 哈希: ${manifestHash}`);
-  console.error(`MANIFEST 大小: ${manifestSize} bytes`);
+  console.error(`MANIFEST hash: ${manifestHash}`);
+  console.error(`MANIFEST size: ${manifestSize} bytes`);
 
-  // 构建 content JSON
+  // Build content JSON
   const url = typeof args.url === 'string' ? args.url : '';
   const contentObj = {
     title: 'MANIFEST.sha256',
@@ -329,7 +329,7 @@ async function cmdSignFolder(folderPath: string | undefined, args: ParsedArgs): 
   };
   const contentJson = JSON.stringify(contentObj);
 
-  // 构建 tags
+  // Build tags
   const tagsStr = args.tags || 't:skill';
   const tags = parseTags(tagsStr);
 
@@ -343,7 +343,7 @@ async function cmdSignFolder(folderPath: string | undefined, args: ParsedArgs): 
   console.log(result);
 }
 
-// ========== 主入口 ==========
+// ========== Main Entry ==========
 async function main(): Promise<void> {
   const args = parseArgs();
   const command = args._args[0];
@@ -385,7 +385,7 @@ async function main(): Promise<void> {
         break;
     }
   } catch (err) {
-    console.error(`操作失败: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

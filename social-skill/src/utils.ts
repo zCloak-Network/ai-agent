@@ -1,11 +1,11 @@
 /**
- * zCloak.ai 脚本公共工具
+ * zCloak.ai Common Utilities
  *
- * 提供 PoW 计算、文件哈希、参数解析、格式化输出等通用功能。
- * 所有其他脚本依赖此模块。
+ * Provides PoW computation, file hashing, argument parsing, formatted output, and more.
+ * All other scripts depend on this module.
  *
- * 注意: 环境管理函数（getEnv、getCanisterIds、getEnvLabel）已移至 config.ts，
- * 此处重新导出以保持向后兼容。
+ * Note: Environment management functions (getEnv, getCanisterIds, getEnvLabel) have been moved to config.ts.
+ * Re-exported here for backward compatibility.
  */
 
 import fs from 'fs';
@@ -17,16 +17,16 @@ import { getPrincipal, getPrincipalObj } from './identity';
 import type { ParsedArgs, PowResult, AutoPowResult, ManifestOptions, ManifestResult } from './types/common';
 import type { SignEvent, SignResult } from './types/sign-event';
 
-// ========== 重新导出环境管理函数（向后兼容） ==========
+// ========== Re-export environment management functions (backward compatibility) ==========
 export { getEnv, getCanisterIds, getEnvLabel };
 
-// ========== PoW 计算 ==========
+// ========== PoW Computation ==========
 
 /**
- * 计算 PoW nonce
- * 找到一个 nonce 使得 sha256(base + nonce) 以指定数量的零开头
- * @param base - base 字符串（通常是 latest sign event id）
- * @param zeros - 前导零数量，默认使用 config.pow_zeros
+ * Compute PoW nonce
+ * Finds a nonce such that sha256(base + nonce) starts with a specified number of zeros
+ * @param base - Base string (usually the latest sign event id)
+ * @param zeros - Number of leading zeros, defaults to config.pow_zeros
  */
 export function computePow(base: string, zeros?: number): PowResult {
   const effectiveZeros = zeros || config.pow_zeros;
@@ -46,41 +46,41 @@ export function computePow(base: string, zeros?: number): PowResult {
 }
 
 /**
- * 自动获取 PoW base 并计算 nonce
- * 完整的 PoW 流程封装：获取 base → 计算 nonce
- * 使用 @dfinity SDK Actor 直接调用 canister
+ * Automatically fetch PoW base and compute nonce
+ * Complete PoW flow: fetch base → compute nonce
+ * Uses @dfinity SDK Actor to call canister directly
  */
 export async function autoPoW(): Promise<AutoPowResult> {
   const principal = getPrincipalObj();
   const actor = await getSignActor();
 
-  // 获取 PoW base（用户最新签名事件 ID）
-  console.error('正在获取 PoW base...');
+  // Fetch PoW base (user's latest sign event ID)
+  console.error('Fetching PoW base...');
   const base = await actor.get_user_latest_sign_event_id(principal);
 
   if (!base || typeof base !== 'string') {
-    console.error(`无法获取 PoW base: ${JSON.stringify(base)}`);
+    console.error(`Failed to fetch PoW base: ${JSON.stringify(base)}`);
     process.exit(1);
   }
 
-  // 计算 PoW nonce
-  console.error(`正在计算 PoW (zeros=${config.pow_zeros})...`);
+  // Compute PoW nonce
+  console.error(`Computing PoW (zeros=${config.pow_zeros})...`);
   const result = computePow(base, config.pow_zeros);
-  console.error(`PoW 完成: nonce=${result.nonce}, 耗时 ${result.timeMs}ms`);
+  console.error(`PoW completed: nonce=${result.nonce}, took ${result.timeMs}ms`);
 
   return { nonce: result.nonce, hash: result.hash, base };
 }
 
-// ========== 命令行参数 ==========
+// ========== Command Line Arguments ==========
 
 /**
- * 解析命令行参数为结构化对象
- * 支持 --key=value 和 --flag 两种格式
- * 位置参数（非 -- 开头的）按顺序放入 _args 数组
+ * Parse command line arguments into a structured object
+ * Supports both --key=value and --flag formats
+ * Positional arguments (not starting with --) are placed in _args array in order
  */
 export function parseArgs(): ParsedArgs {
   const result: ParsedArgs = { _args: [] };
-  // 跳过 node 和脚本路径
+  // Skip node and script path
   const argv = process.argv.slice(2);
 
   for (const arg of argv) {
@@ -99,54 +99,54 @@ export function parseArgs(): ParsedArgs {
 }
 
 /**
- * 解析 --tags 参数为标签数组
- * 格式: "t:crypto,sub:web3,m:alice_id"
+ * Parse --tags argument into a tag array
+ * Format: "t:crypto,sub:web3,m:alice_id"
  */
 export function parseTags(tagsStr: string | boolean | string[] | undefined): string[][] {
   if (!tagsStr || typeof tagsStr !== 'string') return [];
   return tagsStr.split(',').map(pair => {
     const parts = pair.split(':');
     if (parts.length < 2) {
-      console.error(`标签格式错误: "${pair}"，应为 key:value`);
+      console.error(`Invalid tag format: "${pair}", expected key:value`);
       process.exit(1);
     }
     return [parts[0]!, parts.slice(1).join(':')];
   });
 }
 
-// ========== 文件哈希与 MIME ==========
+// ========== File Hash & MIME ==========
 
 /**
- * 计算文件的 SHA256 哈希（纯 Node.js 实现，无 shell 依赖）
- * @param filePath - 文件路径
- * @returns 64 字符 hex 哈希值
+ * Compute SHA256 hash of a file (pure Node.js implementation, no shell dependency)
+ * @param filePath - File path
+ * @returns 64-character hex hash value
  */
 export function hashFile(filePath: string): string {
   try {
     const content = fs.readFileSync(filePath);
     return crypto.createHash('sha256').update(content).digest('hex');
   } catch (err) {
-    console.error(`计算文件哈希失败: ${filePath}`);
+    console.error(`Failed to compute file hash: ${filePath}`);
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
 }
 
 /**
- * 获取文件大小（字节）
+ * Get file size (bytes)
  */
 export function getFileSize(filePath: string): number {
   try {
     return fs.statSync(filePath).size;
   } catch (err) {
-    console.error(`获取文件大小失败: ${filePath}`);
+    console.error(`Failed to get file size: ${filePath}`);
     process.exit(1);
   }
 }
 
 /**
- * 常用 MIME 类型映射表
- * 根据文件扩展名返回对应 MIME 类型
+ * Common MIME type mapping table
+ * Returns the corresponding MIME type based on file extension
  */
 const MIME_MAP: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -169,20 +169,20 @@ const MIME_MAP: Record<string, string> = {
 };
 
 /**
- * 根据文件路径返回 MIME 类型
+ * Return MIME type based on file path
  */
 export function getMimeType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
   return MIME_MAP[ext] || 'application/octet-stream';
 }
 
-// ========== MANIFEST 生成 ==========
+// ========== MANIFEST Generation ==========
 
 /**
- * 递归获取目录下所有文件（排除 MANIFEST.sha256、.git、node_modules）
- * @param dir - 目录路径
- * @param prefix - 路径前缀（用于递归）
- * @returns 相对路径列表（已排序）
+ * Recursively list all files in a directory (excluding MANIFEST.sha256, .git, node_modules)
+ * @param dir - Directory path
+ * @param prefix - Path prefix (for recursion)
+ * @returns Sorted list of relative paths
  */
 export function listFiles(dir: string, prefix?: string): string[] {
   const effectivePrefix = prefix || '';
@@ -192,7 +192,7 @@ export function listFiles(dir: string, prefix?: string): string[] {
   for (const entry of entries) {
     const relativePath = effectivePrefix ? `${effectivePrefix}/${entry.name}` : entry.name;
 
-    // 排除 MANIFEST.sha256、.git 和 node_modules
+    // Exclude MANIFEST.sha256, .git, and node_modules
     if (entry.name === 'MANIFEST.sha256') continue;
     if (entry.name === '.git') continue;
     if (entry.name === 'node_modules') continue;
@@ -208,25 +208,25 @@ export function listFiles(dir: string, prefix?: string): string[] {
 }
 
 /**
- * 生成 MANIFEST.sha256 文件（含元数据头）
- * 格式兼容 GNU sha256sum，元数据用 # 注释行表示
+ * Generate MANIFEST.sha256 file (with metadata header)
+ * Format compatible with GNU sha256sum, metadata represented as # comment lines
  *
- * 此版本使用纯 Node.js 实现，不依赖 shell 命令。
- * author 字段通过 identity.ts 获取，如果无法加载身份则留空。
+ * This version uses pure Node.js implementation, no shell command dependency.
+ * The author field is obtained via identity.ts; left empty if identity cannot be loaded.
  */
 export function generateManifest(folderPath: string, options?: ManifestOptions): ManifestResult {
   const version = options?.version || '1.0.0';
   const manifestPath = path.join(folderPath, 'MANIFEST.sha256');
 
-  // 获取 author（当前 principal）
+  // Get author (current principal)
   let author = '';
   try {
     author = getPrincipal();
   } catch {
-    console.error('警告: 无法获取 principal，author 字段留空');
+    console.error('Warning: unable to get principal, author field left empty');
   }
 
-  // 构建元数据头
+  // Build metadata header
   const folderName = path.basename(path.resolve(folderPath));
   const dateStr = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   const header = [
@@ -236,31 +236,31 @@ export function generateManifest(folderPath: string, options?: ManifestOptions):
     `# author: ${author}`,
   ].join('\n');
 
-  // 递归获取所有文件并计算哈希
+  // Recursively get all files and compute hashes
   const files = listFiles(folderPath);
   const hashLines = files.map(relativePath => {
     const fullPath = path.join(folderPath, relativePath);
     const hash = hashFile(fullPath);
-    // 兼容 sha256sum 输出格式: <hash>  ./<relative_path>
+    // Compatible with sha256sum output format: <hash>  ./<relative_path>
     return `${hash}  ./${relativePath}`;
   });
 
-  // 写入 MANIFEST.sha256
+  // Write MANIFEST.sha256
   const content = header + '\n' + hashLines.join('\n') + '\n';
   fs.writeFileSync(manifestPath, content, 'utf-8');
 
-  // 计算 MANIFEST 自身的哈希和大小
+  // Compute MANIFEST's own hash and size
   const manifestHash = hashFile(manifestPath);
   const manifestSize = getFileSize(manifestPath);
 
   return { manifestPath, manifestHash, manifestSize, fileCount: files.length };
 }
 
-// ========== 输出格式化 ==========
+// ========== Output Formatting ==========
 
 /**
- * 格式化 SignEvent 对象为可读文本
- * Candid opt 类型在 JS 中表示为 [] | [value]
+ * Format a SignEvent object into readable text
+ * Candid opt types are represented as [] | [value] in JS
  */
 export function formatSignEvent(event: SignEvent): string {
   const lines: string[] = [];
@@ -270,17 +270,17 @@ export function formatSignEvent(event: SignEvent): string {
   lines.push(`  created_at = ${event.created_at}`);
   lines.push(`  content_hash = "${event.content_hash}"`);
 
-  // 处理 opt counter — [] 表示 null，[n] 表示有值
+  // Handle opt counter — [] means null, [n] means has value
   if (event.counter && event.counter.length > 0) {
     lines.push(`  counter = ${event.counter[0]}`);
   }
 
-  // 处理 opt content
+  // Handle opt content
   if (event.content && event.content.length > 0) {
     lines.push(`  content = "${event.content[0]}"`);
   }
 
-  // 处理 opt tags
+  // Handle opt tags
   if (event.tags && event.tags.length > 0) {
     const tagsStr = event.tags[0]!
       .map(t => `[${t.map(s => `"${s}"`).join(', ')}]`)
@@ -292,7 +292,7 @@ export function formatSignEvent(event: SignEvent): string {
 }
 
 /**
- * 格式化 SignEvent 数组
+ * Format a SignEvent array
  */
 export function formatSignEvents(events: SignEvent[]): string {
   if (!events || events.length === 0) {
@@ -302,7 +302,7 @@ export function formatSignEvents(events: SignEvent[]): string {
 }
 
 /**
- * 格式化 agent_sign 的返回值（Ok/Err variant）
+ * Format agent_sign return value (Ok/Err variant)
  */
 export function formatSignResult(result: SignResult): string {
   if ('Ok' in result) {
@@ -315,7 +315,7 @@ export function formatSignResult(result: SignResult): string {
 }
 
 /**
- * 格式化 opt text 类型
+ * Format opt text type
  */
 export function formatOptText(optText: [] | [string]): string {
   if (optText && optText.length > 0) {

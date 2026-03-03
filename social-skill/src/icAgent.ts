@@ -1,14 +1,14 @@
 /**
- * zCloak.ai IC Agent 工厂模块
+ * zCloak.ai IC Agent Factory Module
  *
- * 创建和管理与 ICP canister 的连接。
- * 参考 src/lib/canister/agent.ts 设计，但适配独立脚本环境。
+ * Creates and manages connections to ICP canisters.
+ * Designed with reference to src/lib/canister/agent.ts, adapted for standalone script environment.
  *
- * 功能:
- *   getSignActor()     → 签名 canister Actor（带身份，支持 update call）
- *   getRegistryActor() → 注册 canister Actor（带身份，支持 update call）
- *   getAnonymousSignActor()     → 匿名签名 canister Actor（仅 query）
- *   getAnonymousRegistryActor() → 匿名注册 canister Actor（仅 query）
+ * Functions:
+ *   getSignActor()     → Signatures canister Actor (with identity, supports update calls)
+ *   getRegistryActor() → Registry canister Actor (with identity, supports update calls)
+ *   getAnonymousSignActor()     → Anonymous signatures canister Actor (query only)
+ *   getAnonymousRegistryActor() → Anonymous registry canister Actor (query only)
  */
 
 import { HttpAgent, Actor, type ActorSubclass } from '@dfinity/agent';
@@ -18,21 +18,21 @@ import { getCanisterIds } from './config';
 import type { SignService } from './types/sign-event';
 import type { RegistryService } from './types/registry';
 
-/** IC 主网地址 */
+/** IC mainnet address */
 export const IC_HOST = 'https://ic0.app';
 
-// ========== Agent 缓存 ==========
+// ========== Agent Cache ==========
 
-/** 带身份的 Agent（用于 update call） */
+/** Authenticated Agent (for update calls) */
 let _authenticatedAgent: HttpAgent | null = null;
 
-/** 匿名 Agent（用于 query） */
+/** Anonymous Agent (for queries) */
 let _anonymousAgent: HttpAgent | null = null;
 
-// ========== Agent 创建 ==========
+// ========== Agent Creation ==========
 
 /**
- * 获取带身份的 HttpAgent（用于签名/写入操作）
+ * Get authenticated HttpAgent (for signing/write operations)
  */
 async function getAuthenticatedAgent(): Promise<HttpAgent> {
   if (!_authenticatedAgent) {
@@ -46,7 +46,7 @@ async function getAuthenticatedAgent(): Promise<HttpAgent> {
 }
 
 /**
- * 获取匿名 HttpAgent（用于只读查询操作）
+ * Get anonymous HttpAgent (for read-only query operations)
  */
 async function getAnonymousAgent(): Promise<HttpAgent> {
   if (!_anonymousAgent) {
@@ -57,10 +57,10 @@ async function getAnonymousAgent(): Promise<HttpAgent> {
   return _anonymousAgent;
 }
 
-// ========== Actor 工厂 ==========
+// ========== Actor Factory ==========
 
 /**
- * 获取签名 canister Actor（带身份，支持 update call）
+ * Get signatures canister Actor (with identity, supports update calls)
  */
 export async function getSignActor(): Promise<ActorSubclass<SignService>> {
   const agent = await getAuthenticatedAgent();
@@ -72,7 +72,7 @@ export async function getSignActor(): Promise<ActorSubclass<SignService>> {
 }
 
 /**
- * 获取注册 canister Actor（带身份，支持 update call）
+ * Get registry canister Actor (with identity, supports update calls)
  */
 export async function getRegistryActor(): Promise<ActorSubclass<RegistryService>> {
   const agent = await getAuthenticatedAgent();
@@ -84,7 +84,7 @@ export async function getRegistryActor(): Promise<ActorSubclass<RegistryService>
 }
 
 /**
- * 获取匿名签名 canister Actor（仅 query，无需身份）
+ * Get anonymous signatures canister Actor (query only, no identity needed)
  */
 export async function getAnonymousSignActor(): Promise<ActorSubclass<SignService>> {
   const agent = await getAnonymousAgent();
@@ -96,7 +96,7 @@ export async function getAnonymousSignActor(): Promise<ActorSubclass<SignService
 }
 
 /**
- * 获取匿名注册 canister Actor（仅 query，无需身份）
+ * Get anonymous registry canister Actor (query only, no identity needed)
  */
 export async function getAnonymousRegistryActor(): Promise<ActorSubclass<RegistryService>> {
   const agent = await getAnonymousAgent();
@@ -108,7 +108,7 @@ export async function getAnonymousRegistryActor(): Promise<ActorSubclass<Registr
 }
 
 /**
- * 重置所有 Agent 和 Actor 缓存（用于错误恢复）
+ * Reset all Agent and Actor caches (for error recovery)
  */
 export function resetAgents(): void {
   _authenticatedAgent = null;

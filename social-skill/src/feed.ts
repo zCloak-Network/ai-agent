@@ -1,50 +1,50 @@
 #!/usr/bin/env node
 /**
- * zCloak.ai 事件/帖子获取工具
+ * zCloak.ai Event/Post Fetching Tool
  *
- * 提供全局计数器查询和按计数器范围获取事件的功能。
- * 使用 @dfinity JS SDK 直接与 ICP canister 交互，无需 dfx。
+ * Provides global counter query and event fetching by counter range.
+ * Uses @dfinity JS SDK to interact directly with ICP canister, no dfx required.
  *
- * 用法:
- *   zcloak-agent feed counter                获取当前全局计数器值
- *   zcloak-agent feed fetch <from> <to>      按计数器范围获取事件
+ * Usage:
+ *   zcloak-agent feed counter                Get current global counter value
+ *   zcloak-agent feed fetch <from> <to>      Fetch events by counter range
  *
- * 所有命令支持 --env=dev 切换环境。
+ * All commands support --env=dev to switch environments.
  */
 
 import { parseArgs, formatSignEvents } from './utils';
 import { getAnonymousSignActor } from './icAgent';
 
-// ========== 帮助信息 ==========
+// ========== Help Information ==========
 function showHelp(): void {
-  console.log('zCloak.ai 事件/帖子获取工具');
+  console.log('zCloak.ai Event/Post Fetching Tool');
   console.log('');
-  console.log('用法:');
-  console.log('  zcloak-agent feed counter              获取当前全局计数器值');
-  console.log('  zcloak-agent feed fetch <from> <to>    按计数器范围获取事件');
+  console.log('Usage:');
+  console.log('  zcloak-agent feed counter              Get current global counter value');
+  console.log('  zcloak-agent feed fetch <from> <to>    Fetch events by counter range');
   console.log('');
-  console.log('选项:');
-  console.log('  --env=prod|dev   选择环境（默认 prod）');
+  console.log('Options:');
+  console.log('  --env=prod|dev   Select environment (default: prod)');
   console.log('');
-  console.log('示例:');
+  console.log('Examples:');
   console.log('  zcloak-agent feed counter');
   console.log('  zcloak-agent feed fetch 11 16');
 }
 
-// ========== 命令实现 ==========
+// ========== Command Implementations ==========
 
-/** 获取当前全局计数器值 */
+/** Get current global counter value */
 async function cmdCounter(): Promise<void> {
   const actor = await getAnonymousSignActor();
   const counter = await actor.get_counter();
   console.log(`(${counter} : nat32)`);
 }
 
-/** 按计数器范围获取事件 */
+/** Fetch events by counter range */
 async function cmdFetch(from: string | undefined, to: string | undefined): Promise<void> {
   if (!from || !to) {
-    console.error('错误: 需要提供 from 和 to 参数');
-    console.error('用法: zcloak-agent feed fetch <from> <to>');
+    console.error('Error: from and to parameters are required');
+    console.error('Usage: zcloak-agent feed fetch <from> <to>');
     process.exit(1);
   }
 
@@ -52,7 +52,7 @@ async function cmdFetch(from: string | undefined, to: string | undefined): Promi
   const toNum = parseInt(to, 10);
 
   if (isNaN(fromNum) || isNaN(toNum)) {
-    console.error('错误: from 和 to 必须是数字');
+    console.error('Error: from and to must be numbers');
     process.exit(1);
   }
 
@@ -61,7 +61,7 @@ async function cmdFetch(from: string | undefined, to: string | undefined): Promi
   console.log(formatSignEvents(events));
 }
 
-// ========== 主入口 ==========
+// ========== Main Entry ==========
 async function main(): Promise<void> {
   const args = parseArgs();
   const command = args._args[0];
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
         break;
     }
   } catch (err) {
-    console.error(`操作失败: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

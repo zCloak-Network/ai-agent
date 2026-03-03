@@ -1,109 +1,109 @@
 /**
- * zCloak.ai Candid IDL 定义
+ * zCloak.ai Candid IDL Definitions
  *
- * 包含签名 canister 和注册 canister 的完整接口定义。
- * 参考 src/lib/canister/idl.ts 并根据 skill.md 文档补全。
+ * Contains complete interface definitions for the signatures canister and registry canister.
+ * Based on src/lib/canister/idl.ts with additions from skill.md documentation.
  *
- * 注意:
- * - agent_sign 为 2 参数 (SignParm, Text)，以 skill.md 为准
- * - 补全了 Kind1IdentityProfile（原 IDL 缺失）
- * - 补全了 registry canister 的全部方法
+ * Notes:
+ * - agent_sign takes 2 parameters (SignParm, Text), as per skill.md
+ * - Kind1IdentityProfile added (missing from original IDL)
+ * - All registry canister methods added
  */
 
 import { IDL } from '@dfinity/candid';
 
-// ========== 签名 Canister IDL ==========
+// ========== Signatures Canister IDL ==========
 
 /**
- * 签名 canister IDL 工厂
+ * Signatures canister IDL factory
  * Canister ID:
  *   prod: jayj5-xyaaa-aaaam-qfinq-cai
  *   dev:  zpbbm-piaaa-aaaaj-a3dsq-cai
  */
 export const signIdlFactory: IDL.InterfaceFactory = ({ IDL }) => {
-  // SignEvent 记录类型 — canister 返回的签名事件
+  // SignEvent record type — sign event returned by canister
   const SignEvent = IDL.Record({
-    counter: IDL.Opt(IDL.Nat32),          // 全局自增计数器
-    id: IDL.Text,                          // 事件唯一 ID（sha256 哈希）
-    kind: IDL.Nat32,                       // 事件类型（1-15）
-    ai_id: IDL.Text,                       // 签名者 principal ID
-    created_at: IDL.Nat64,                 // 创建时间戳（纳秒）
-    tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),  // 标签数组
-    content: IDL.Opt(IDL.Text),            // 内容（可选）
-    content_hash: IDL.Text,                // 内容 SHA256 哈希
+    counter: IDL.Opt(IDL.Nat32),          // Global auto-increment counter
+    id: IDL.Text,                          // Event unique ID (sha256 hash)
+    kind: IDL.Nat32,                       // Event type (1-15)
+    ai_id: IDL.Text,                       // Signer principal ID
+    created_at: IDL.Nat64,                 // Creation timestamp (nanoseconds)
+    tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),  // Tags array
+    content: IDL.Opt(IDL.Text),            // Content (optional)
+    content_hash: IDL.Text,                // Content SHA256 hash
   });
 
-  // SignParm 变体类型 — 15 种签名参数类型
+  // SignParm variant type — 15 signing parameter types
   const SignParm = IDL.Variant({
-    // Kind 1: 身份档案（skill.md 有、原 IDL 缺失）
+    // Kind 1: Identity profile (present in skill.md, missing from original IDL)
     Kind1IdentityProfile: IDL.Record({
       content: IDL.Text,
     }),
-    // Kind 2: 身份验证
+    // Kind 2: Identity verification
     Kind2IdentityVerification: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 3: 简单协议
+    // Kind 3: Simple agreement
     Kind3SimpleAgreement: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 4: 公开帖子
+    // Kind 4: Public post
     Kind4PublicPost: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 5: 私密帖子
+    // Kind 5: Private post
     Kind5PrivatePost: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 6: 互动（点赞/踩/回复）
+    // Kind 6: Interaction (like/dislike/reply)
     Kind6Interaction: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 7: 联系人列表（关注）
+    // Kind 7: Contact list (follow)
     Kind7ContactList: IDL.Record({
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 8: 媒体资产
+    // Kind 8: Media asset
     Kind8MediaAsset: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 9: 服务列表
+    // Kind 9: Service listing
     Kind9ServiceListing: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 10: 工作请求
+    // Kind 10: Job request
     Kind10JobRequest: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 11: 文档签名
+    // Kind 11: Document signature
     Kind11DocumentSignature: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 12: 公开合同
+    // Kind 12: Public contract
     Kind12PublicContract: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 13: 私密合同
+    // Kind 13: Private contract
     Kind13PrivateContract: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 14: 评价
+    // Kind 14: Review
     Kind14Review: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
     }),
-    // Kind 15: 通用证明
+    // Kind 15: General attestation
     Kind15GeneralAttestation: IDL.Record({
       content: IDL.Text,
       tags: IDL.Opt(IDL.Vec(IDL.Vec(IDL.Text))),
@@ -111,9 +111,9 @@ export const signIdlFactory: IDL.InterfaceFactory = ({ IDL }) => {
   });
 
   return IDL.Service({
-    // ===== 签名操作（update call，需要身份） =====
+    // ===== Signing operations (update call, requires identity) =====
 
-    // agent_sign: 带 PoW 的签名（2 参数: SignParm + nonce 文本）
+    // agent_sign: Signing with PoW (2 params: SignParm + nonce text)
     // skill.md: agent_sign(SignParm, "nonce")
     agent_sign: IDL.Func(
       [SignParm, IDL.Text],
@@ -121,145 +121,145 @@ export const signIdlFactory: IDL.InterfaceFactory = ({ IDL }) => {
       []
     ),
 
-    // sign: 直接签名（无 PoW，需 canister 权限）
+    // sign: Direct signing (no PoW, requires canister permission)
     sign: IDL.Func([SignParm], [SignEvent], []),
 
-    // mcp_sign: MCP 代理签名
+    // mcp_sign: MCP proxy signing
     mcp_sign: IDL.Func([IDL.Principal, SignParm], [SignEvent], []),
 
-    // ===== 查询操作（query，可匿名） =====
+    // ===== Query operations (query, can be anonymous) =====
 
-    // 获取全局计数器
+    // Get global counter
     get_counter: IDL.Func([], [IDL.Nat32], ['query']),
 
-    // 按计数器范围获取事件
+    // Fetch events by counter range
     fetch_events_by_counter: IDL.Func(
       [IDL.Nat32, IDL.Nat32],
       [IDL.Vec(SignEvent)],
       ['query']
     ),
 
-    // 获取所有签名事件
+    // Get all sign events
     get_all_sign_events: IDL.Func([], [IDL.Vec(SignEvent)], ['query']),
 
-    // 获取用户签名历史（分页）
+    // Get user sign history (paginated)
     fetch_user_sign: IDL.Func(
       [IDL.Principal, IDL.Nat32, IDL.Nat32],
       [IDL.Nat32, IDL.Vec(SignEvent)],
       ['query']
     ),
 
-    // 获取用户最新签名事件 ID（PoW base）
+    // Get user's latest sign event ID (PoW base)
     get_user_latest_sign_event_id: IDL.Func(
       [IDL.Principal],
       [IDL.Text],
       ['query']
     ),
 
-    // 通过消息内容验证签名
+    // Verify signature by message content
     verify_message: IDL.Func([IDL.Text], [IDL.Vec(SignEvent)], ['query']),
 
-    // 通过消息哈希验证签名
+    // Verify signature by message hash
     verify_msg_hash: IDL.Func([IDL.Text], [IDL.Vec(SignEvent)], ['query']),
 
-    // 通过文件哈希验证签名
+    // Verify signature by file hash
     verify_file_hash: IDL.Func([IDL.Text], [IDL.Vec(SignEvent)], ['query']),
 
-    // 通过 ID 获取签名事件
+    // Get sign event by ID
     get_sign_event_by_id: IDL.Func(
       [IDL.Text],
       [IDL.Opt(SignEvent)],
       ['query']
     ),
 
-    // 获取 Kind 1 身份档案
+    // Get Kind 1 identity profile
     get_kind1_event_by_principal: IDL.Func(
       [IDL.Text],
       [IDL.Opt(SignEvent)],
       ['query']
     ),
 
-    // 连接测试
+    // Connection test
     greet: IDL.Func([IDL.Text], [IDL.Text], ['query']),
   });
 };
 
-// ========== 注册 Canister IDL ==========
+// ========== Registry Canister IDL ==========
 
 /**
- * 注册 canister IDL 工厂
+ * Registry canister IDL factory
  * Canister ID:
  *   prod: ytmuz-nyaaa-aaaah-qqoja-cai
  *   dev:  3spie-caaaa-aaaam-ae3sa-cai
  *
- * 注意: UserProfile 结构根据 skill.md 返回示例推导，
- * 字段可能不完整，后续可按实际返回值补充。
+ * Note: UserProfile structure inferred from skill.md response examples.
+ * Fields may be incomplete; can be supplemented based on actual return values.
  */
 export const registryIdlFactory: IDL.InterfaceFactory = ({ IDL }) => {
-  // UserProfile 中的 position 记录
+  // Position record in UserProfile
   const Position = IDL.Record({
     is_human: IDL.Bool,
     connection_list: IDL.Vec(IDL.Principal),
   });
 
-  // AI 档案记录
+  // AI profile record
   const AiProfile = IDL.Record({
     position: IDL.Opt(Position),
   });
 
-  // 用户档案记录
+  // User profile record
   const UserProfile = IDL.Record({
     username: IDL.Text,
     ai_profile: IDL.Opt(AiProfile),
     principal_id: IDL.Opt(IDL.Text),
   });
 
-  // 注册成功返回的记录
+  // Registration success result record
   const RegisterResult = IDL.Record({
     username: IDL.Text,
   });
 
   return IDL.Service({
-    // ===== 查询操作（query） =====
+    // ===== Query operations (query) =====
 
-    // 根据 principal 获取用户名
+    // Get username by principal
     get_username_by_principal: IDL.Func(
       [IDL.Text],
       [IDL.Opt(IDL.Text)],
       ['query']
     ),
 
-    // 根据用户名获取 principal
+    // Get principal by username
     get_user_principal: IDL.Func(
       [IDL.Text],
       [IDL.Opt(IDL.Principal)],
       ['query']
     ),
 
-    // 根据用户名获取 UserProfile（dev 环境可用）
+    // Get UserProfile by username (available in dev environment)
     user_profile_get: IDL.Func(
       [IDL.Text],
       [IDL.Opt(UserProfile)],
       ['query']
     ),
 
-    // 根据 principal 获取 UserProfile
+    // Get UserProfile by principal
     user_profile_get_by_principal: IDL.Func(
       [IDL.Text],
       [IDL.Opt(UserProfile)],
       ['query']
     ),
 
-    // ===== 更新操作（update call，需要身份） =====
+    // ===== Update operations (update call, requires identity) =====
 
-    // 注册新 agent name
+    // Register new agent name
     register_agent: IDL.Func(
       [IDL.Text],
       [IDL.Variant({ Ok: RegisterResult, Err: IDL.Text })],
       []
     ),
 
-    // 准备 agent-owner 绑定（WebAuthn 挑战）
+    // Prepare agent-owner binding (WebAuthn challenge)
     agent_prepare_bond: IDL.Func(
       [IDL.Text],
       [IDL.Variant({ Ok: IDL.Text, Err: IDL.Text })],

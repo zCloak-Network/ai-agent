@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * zCloak.ai 文档工具
+ * zCloak.ai Document Tool
  *
- * 提供 MANIFEST.sha256 生成、验证、文件哈希计算等功能。
- * 纯 Node.js 实现，跨平台兼容，无需外部 shell 命令。
+ * Provides MANIFEST.sha256 generation, verification, file hash computation, and more.
+ * Pure Node.js implementation, cross-platform compatible, no external shell commands required.
  *
- * 用法:
- *   zcloak-agent doc manifest <folder_path> [--version=1.0.0]    生成 MANIFEST.sha256（含元数据头）
- *   zcloak-agent doc verify-manifest <folder_path>               验证 MANIFEST.sha256 中的文件完整性
- *   zcloak-agent doc hash <file_path>                            计算单文件 SHA256 哈希
- *   zcloak-agent doc info <file_path>                            显示文件哈希、大小、MIME 等信息
+ * Usage:
+ *   zcloak-agent doc manifest <folder_path> [--version=1.0.0]    Generate MANIFEST.sha256 (with metadata header)
+ *   zcloak-agent doc verify-manifest <folder_path>               Verify file integrity in MANIFEST.sha256
+ *   zcloak-agent doc hash <file_path>                            Compute single file SHA256 hash
+ *   zcloak-agent doc info <file_path>                            Show file hash, size, MIME, etc.
  */
 
 import fs from 'fs';
@@ -23,40 +23,40 @@ import {
 } from './utils';
 import type { ParsedArgs } from './types/common';
 
-// ========== 帮助信息 ==========
+// ========== Help Information ==========
 function showHelp(): void {
-  console.log('zCloak.ai 文档工具');
+  console.log('zCloak.ai Document Tool');
   console.log('');
-  console.log('用法:');
-  console.log('  zcloak-agent doc manifest <folder_path> [--version=1.0.0]   生成 MANIFEST.sha256');
-  console.log('  zcloak-agent doc verify-manifest <folder_path>              验证文件完整性');
-  console.log('  zcloak-agent doc hash <file_path>                           计算 SHA256 哈希');
-  console.log('  zcloak-agent doc info <file_path>                           显示文件详细信息');
+  console.log('Usage:');
+  console.log('  zcloak-agent doc manifest <folder_path> [--version=1.0.0]   Generate MANIFEST.sha256');
+  console.log('  zcloak-agent doc verify-manifest <folder_path>              Verify file integrity');
+  console.log('  zcloak-agent doc hash <file_path>                           Compute SHA256 hash');
+  console.log('  zcloak-agent doc info <file_path>                           Show file details');
   console.log('');
-  console.log('选项:');
-  console.log('  --version=x.y.z  MANIFEST 版本号（默认 1.0.0）');
+  console.log('Options:');
+  console.log('  --version=x.y.z  MANIFEST version (default: 1.0.0)');
   console.log('');
-  console.log('示例:');
+  console.log('Examples:');
   console.log('  zcloak-agent doc manifest ./my-skill/ --version=2.0.0');
   console.log('  zcloak-agent doc verify-manifest ./my-skill/');
   console.log('  zcloak-agent doc hash ./report.pdf');
   console.log('  zcloak-agent doc info ./report.pdf');
 }
 
-// ========== 命令实现 ==========
+// ========== Command Implementations ==========
 
 /**
- * 生成 MANIFEST.sha256（含元数据头）
- * 格式兼容 GNU sha256sum，元数据用 # 注释行表示
+ * Generate MANIFEST.sha256 (with metadata header)
+ * Format compatible with GNU sha256sum, metadata represented as # comment lines
  */
 function cmdManifest(folderPath: string | undefined, args: ParsedArgs): void {
   if (!folderPath) {
-    console.error('错误: 需要提供文件夹路径');
+    console.error('Error: folder path is required');
     process.exit(1);
   }
 
   if (!fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
-    console.error(`错误: 目录不存在: ${folderPath}`);
+    console.error(`Error: directory does not exist: ${folderPath}`);
     process.exit(1);
   }
 
@@ -64,30 +64,30 @@ function cmdManifest(folderPath: string | undefined, args: ParsedArgs): void {
 
   try {
     const result = generateManifest(folderPath, { version });
-    console.log(`MANIFEST.sha256 已生成: ${result.manifestPath}`);
-    console.log(`文件数: ${result.fileCount}`);
-    console.log(`版本: ${version}`);
+    console.log(`MANIFEST.sha256 generated: ${result.manifestPath}`);
+    console.log(`File count: ${result.fileCount}`);
+    console.log(`Version: ${version}`);
     console.log(`MANIFEST SHA256: ${result.manifestHash}`);
-    console.log(`MANIFEST 大小: ${result.manifestSize} bytes`);
+    console.log(`MANIFEST size: ${result.manifestSize} bytes`);
   } catch (err) {
-    console.error(`生成 MANIFEST 失败: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`Failed to generate MANIFEST: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }
 
 /**
- * 验证 MANIFEST.sha256 中的文件完整性
- * 纯 Node.js 实现，逐行解析并验证每个文件的哈希
+ * Verify file integrity in MANIFEST.sha256
+ * Pure Node.js implementation, parses and verifies each file hash line by line
  */
 function cmdVerifyManifest(folderPath: string | undefined): void {
   if (!folderPath) {
-    console.error('错误: 需要提供文件夹路径');
+    console.error('Error: folder path is required');
     process.exit(1);
   }
 
   const manifestPath = path.join(folderPath, 'MANIFEST.sha256');
   if (!fs.existsSync(manifestPath)) {
-    console.error(`错误: 未找到 MANIFEST.sha256: ${manifestPath}`);
+    console.error(`Error: MANIFEST.sha256 not found: ${manifestPath}`);
     process.exit(1);
   }
 
@@ -96,10 +96,10 @@ function cmdVerifyManifest(folderPath: string | undefined): void {
   let fileCount = 0;
 
   for (const line of manifestContent.split('\n')) {
-    // 跳过注释行和空行
+    // Skip comment lines and empty lines
     if (!line.trim() || line.startsWith('#')) continue;
 
-    // 解析格式: <hash>  ./<relative_path>  或  <hash>  <relative_path>
+    // Parse format: <hash>  ./<relative_path>  or  <hash>  <relative_path>
     const match = line.match(/^([a-f0-9]{64})\s+(.+)$/);
     if (!match) continue;
 
@@ -110,7 +110,7 @@ function cmdVerifyManifest(folderPath: string | undefined): void {
     fileCount++;
 
     if (!fs.existsSync(fullPath)) {
-      console.log(`FAILED: ${relativePath} (文件不存在)`);
+      console.log(`FAILED: ${relativePath} (file not found)`);
       allPassed = false;
       continue;
     }
@@ -125,27 +125,27 @@ function cmdVerifyManifest(folderPath: string | undefined): void {
   }
 
   if (!allPassed) {
-    console.error(`\n验证失败！部分文件不匹配（共检查 ${fileCount} 个文件）`);
+    console.error(`\nVerification failed! Some files do not match (checked ${fileCount} files)`);
     process.exit(1);
   }
 
-  console.log(`\n所有文件验证通过！（共 ${fileCount} 个文件）`);
+  console.log(`\nAll files verified successfully! (${fileCount} files)`);
 
-  // 输出 MANIFEST 哈希（方便后续链上验证）
+  // Output MANIFEST hash (for subsequent on-chain verification)
   const manifestHash = hashFile(manifestPath);
   console.log(`\nMANIFEST SHA256: ${manifestHash}`);
-  console.log('（可用此哈希进行链上签名验证: node verify.js file MANIFEST.sha256）');
+  console.log('(Use this hash for on-chain signature verification: node verify.js file MANIFEST.sha256)');
 }
 
-/** 计算单文件 SHA256 哈希 */
+/** Compute single file SHA256 hash */
 function cmdHash(filePath: string | undefined): void {
   if (!filePath) {
-    console.error('错误: 需要提供文件路径');
+    console.error('Error: file path is required');
     process.exit(1);
   }
 
   if (!fs.existsSync(filePath)) {
-    console.error(`错误: 文件不存在: ${filePath}`);
+    console.error(`Error: file does not exist: ${filePath}`);
     process.exit(1);
   }
 
@@ -153,15 +153,15 @@ function cmdHash(filePath: string | undefined): void {
   console.log(hash);
 }
 
-/** 显示文件详细信息（哈希、大小、MIME） */
+/** Show file details (hash, size, MIME) */
 function cmdInfo(filePath: string | undefined): void {
   if (!filePath) {
-    console.error('错误: 需要提供文件路径');
+    console.error('Error: file path is required');
     process.exit(1);
   }
 
   if (!fs.existsSync(filePath)) {
-    console.error(`错误: 文件不存在: ${filePath}`);
+    console.error(`Error: file does not exist: ${filePath}`);
     process.exit(1);
   }
 
@@ -170,17 +170,17 @@ function cmdInfo(filePath: string | undefined): void {
   const fileName = path.basename(filePath);
   const mime = getMimeType(filePath);
 
-  console.log(`文件名: ${fileName}`);
+  console.log(`Filename: ${fileName}`);
   console.log(`SHA256: ${hash}`);
-  console.log(`大小: ${size} bytes`);
+  console.log(`Size: ${size} bytes`);
   console.log(`MIME: ${mime}`);
 
-  // 输出 JSON 格式（方便复制用于签名）
+  // Output JSON format (for easy copy-paste for signing)
   const contentObj = { title: fileName, hash, mime, url: '', size_bytes: size };
-  console.log(`\nJSON (用于签名):\n${JSON.stringify(contentObj, null, 2)}`);
+  console.log(`\nJSON (for signing):\n${JSON.stringify(contentObj, null, 2)}`);
 }
 
-// ========== 主入口 ==========
+// ========== Main Entry ==========
 function main(): void {
   const args = parseArgs();
   const command = args._args[0];

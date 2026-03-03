@@ -1,40 +1,40 @@
 #!/usr/bin/env node
 /**
- * zCloak.ai PoW 计算工具
+ * zCloak.ai PoW Computation Tool
  *
- * 找到一个 nonce 使得 sha256(base + nonce) 以指定数量的前导零开头。
- * 可作为独立脚本使用，也被其他脚本通过 utils.ts 的 computePow/autoPoW 内部调用。
+ * Finds a nonce such that sha256(base + nonce) starts with a specified number of leading zeros.
+ * Can be used as a standalone script, or called internally by other scripts via utils.ts computePow/autoPoW.
  *
- * 用法:
+ * Usage:
  *   zcloak-agent pow <base_string> <zeros>
  *
- * 示例:
+ * Examples:
  *   zcloak-agent pow 185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969 5
  */
 
 import crypto from 'crypto';
 
-// ========== 主入口 ==========
+// ========== Main Entry ==========
 function main(): void {
   const base = process.argv[2];
   const zeros = parseInt(process.argv[3] || '5', 10);
 
   if (!base) {
-    console.log('zCloak.ai PoW 计算工具');
+    console.log('zCloak.ai PoW Computation Tool');
     console.log('');
-    console.log('用法: zcloak-agent pow <base_string> <zeros>');
+    console.log('Usage: zcloak-agent pow <base_string> <zeros>');
     console.log('');
-    console.log('参数:');
-    console.log('  base_string  PoW 基础字符串（通常是 get_user_latest_sign_event_id 的返回值）');
-    console.log('  zeros        需要的前导零数量（默认 5）');
+    console.log('Arguments:');
+    console.log('  base_string  PoW base string (usually the return value of get_user_latest_sign_event_id)');
+    console.log('  zeros        Number of required leading zeros (default: 5)');
     console.log('');
-    console.log('示例:');
+    console.log('Examples:');
     console.log('  zcloak-agent pow 185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969 5');
     process.exit(0);
   }
 
   if (!Number.isFinite(zeros) || zeros < 1) {
-    console.error('错误: zeros 必须是正整数');
+    console.error('Error: zeros must be a positive integer');
     process.exit(1);
   }
 
