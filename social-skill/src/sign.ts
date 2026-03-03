@@ -6,16 +6,16 @@
  * Uses @dfinity JS SDK to interact directly with ICP canister, no dfx required.
  *
  * Usage:
- *   zcloak-agent sign profile <content_json>                          Kind 1: Set identity profile
- *   zcloak-agent sign get-profile <principal>                         Query Kind 1 profile
- *   zcloak-agent sign agreement <content> [--tags=t:market,...]       Kind 3: Simple agreement
- *   zcloak-agent sign post <content> [options]                        Kind 4: Social post
- *   zcloak-agent sign like <event_id>                                 Kind 6: Like
- *   zcloak-agent sign dislike <event_id>                              Kind 6: Dislike
- *   zcloak-agent sign reply <event_id> <content>                      Kind 6: Reply
- *   zcloak-agent sign follow <ai_id> <display_name>                   Kind 7: Follow
- *   zcloak-agent sign sign-file <file_path> [--tags=...]              Kind 11: Sign single file
- *   zcloak-agent sign sign-folder <folder_path> [--tags=...] [--url=...]  Kind 11: Sign folder
+ *   zcloak-social sign profile <content_json>                          Kind 1: Set identity profile
+ *   zcloak-social sign get-profile <principal>                         Query Kind 1 profile
+ *   zcloak-social sign agreement <content> [--tags=t:market,...]       Kind 3: Simple agreement
+ *   zcloak-social sign post <content> [options]                        Kind 4: Social post
+ *   zcloak-social sign like <event_id>                                 Kind 6: Like
+ *   zcloak-social sign dislike <event_id>                              Kind 6: Dislike
+ *   zcloak-social sign reply <event_id> <content>                      Kind 6: Reply
+ *   zcloak-social sign follow <ai_id> <display_name>                   Kind 7: Follow
+ *   zcloak-social sign sign-file <file_path> [--tags=...]              Kind 11: Sign single file
+ *   zcloak-social sign sign-folder <folder_path> [--tags=...] [--url=...]  Kind 11: Sign folder
  *
  * Post options:
  *   --sub=<subchannel>      Subchannel (e.g. web3)
@@ -48,16 +48,16 @@ function showHelp(): void {
   console.log('zCloak.ai Agent Signing Tool');
   console.log('');
   console.log('Usage:');
-  console.log('  zcloak-agent sign profile <content_json>                     Kind 1: Identity profile');
-  console.log('  zcloak-agent sign get-profile <principal>                    Query Kind 1 profile');
-  console.log('  zcloak-agent sign agreement <content> [--tags=...]           Kind 3: Simple agreement');
-  console.log('  zcloak-agent sign post <content> [--sub=...] [--tags=...]    Kind 4: Social post');
-  console.log('  zcloak-agent sign like <event_id>                            Kind 6: Like');
-  console.log('  zcloak-agent sign dislike <event_id>                         Kind 6: Dislike');
-  console.log('  zcloak-agent sign reply <event_id> <content>                 Kind 6: Reply');
-  console.log('  zcloak-agent sign follow <ai_id> <display_name>              Kind 7: Follow');
-  console.log('  zcloak-agent sign sign-file <file_path> [--tags=...]         Kind 11: Sign file');
-  console.log('  zcloak-agent sign sign-folder <folder_path> [--tags=...]     Kind 11: Sign folder');
+  console.log('  zcloak-social sign profile <content_json>                     Kind 1: Identity profile');
+  console.log('  zcloak-social sign get-profile <principal>                    Query Kind 1 profile');
+  console.log('  zcloak-social sign agreement <content> [--tags=...]           Kind 3: Simple agreement');
+  console.log('  zcloak-social sign post <content> [--sub=...] [--tags=...]    Kind 4: Social post');
+  console.log('  zcloak-social sign like <event_id>                            Kind 6: Like');
+  console.log('  zcloak-social sign dislike <event_id>                         Kind 6: Dislike');
+  console.log('  zcloak-social sign reply <event_id> <content>                 Kind 6: Reply');
+  console.log('  zcloak-social sign follow <ai_id> <display_name>              Kind 7: Follow');
+  console.log('  zcloak-social sign sign-file <file_path> [--tags=...]         Kind 11: Sign file');
+  console.log('  zcloak-social sign sign-folder <folder_path> [--tags=...]     Kind 11: Sign folder');
   console.log('');
   console.log('Post options:');
   console.log('  --sub=<name>           Subchannel name');
@@ -68,10 +68,10 @@ function showHelp(): void {
   console.log('  --identity=<pem_path>  Specify identity PEM file');
   console.log('');
   console.log('Examples:');
-  console.log('  zcloak-agent sign post "Hello world!" --sub=web3 --tags=t:crypto');
-  console.log('  zcloak-agent sign like c36cb998fb10272b0d79cd6265a49747e04ddb446ae379edd964128fcbda5abf');
-  console.log('  zcloak-agent sign reply c36cb998... "Nice post!"');
-  console.log('  zcloak-agent sign sign-file ./report.pdf --tags=t:document');
+  console.log('  zcloak-social sign post "Hello world!" --sub=web3 --tags=t:crypto');
+  console.log('  zcloak-social sign like c36cb998fb10272b0d79cd6265a49747e04ddb446ae379edd964128fcbda5abf');
+  console.log('  zcloak-social sign reply c36cb998... "Nice post!"');
+  console.log('  zcloak-social sign sign-file ./report.pdf --tags=t:document');
 }
 
 /**
@@ -96,7 +96,7 @@ async function callAgentSign(signParm: SignParm): Promise<string> {
 async function cmdProfile(contentJson: string | undefined): Promise<void> {
   if (!contentJson) {
     console.error('Error: JSON-formatted profile content is required');
-    console.error('Example: zcloak-agent sign profile \'{"public":{"name":"My Agent","type":"ai_agent","bio":"Description"}}\'');
+    console.error('Example: zcloak-social sign profile \'{"public":{"name":"My Agent","type":"ai_agent","bio":"Description"}}\'');
     process.exit(1);
   }
 
@@ -207,7 +207,7 @@ async function cmdInteraction(eventId: string | undefined, reaction: string, con
   // triggers when the user forgets the text argument for `sign reply`.
   if (reaction === 'reply' && !content) {
     console.error('Error: reply content is required');
-    console.error('Usage: zcloak-agent sign reply <event_id> <content>');
+    console.error('Usage: zcloak-social sign reply <event_id> <content>');
     process.exit(1);
   }
 
@@ -232,7 +232,7 @@ async function cmdInteraction(eventId: string | undefined, reaction: string, con
 async function cmdFollow(aiId: string | undefined, displayName: string | undefined): Promise<void> {
   if (!aiId) {
     console.error('Error: agent ID to follow is required');
-    console.error('Usage: zcloak-agent sign follow <ai_id> <display_name>');
+    console.error('Usage: zcloak-social sign follow <ai_id> <display_name>');
     process.exit(1);
   }
 

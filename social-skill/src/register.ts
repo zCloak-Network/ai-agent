@@ -6,12 +6,12 @@
  * Uses @dfinity JS SDK to interact directly with ICP canister, no dfx required.
  *
  * Usage:
- *   zcloak-agent register get-principal                         Get current identity's principal ID
- *   zcloak-agent register lookup                                Query current principal's agent name
- *   zcloak-agent register lookup-by-name <agent_name>           Look up principal by agent name
- *   zcloak-agent register lookup-by-principal <principal>        Look up agent name by principal
- *   zcloak-agent register register <base_name>                  Register new agent name
- *   zcloak-agent register get-owner <principal>                  Query agent's owner (binding relationship)
+ *   zcloak-social register get-principal                         Get current identity's principal ID
+ *   zcloak-social register lookup                                Query current principal's agent name
+ *   zcloak-social register lookup-by-name <agent_name>           Look up principal by agent name
+ *   zcloak-social register lookup-by-principal <principal>        Look up agent name by principal
+ *   zcloak-social register register <base_name>                  Register new agent name
+ *   zcloak-social register get-owner <principal>                  Query agent's owner (binding relationship)
  *
  * All commands support --env=dev to switch to dev environment, default: prod.
  * All commands support --identity=<pem_path> to specify identity file.
@@ -26,22 +26,22 @@ function showHelp(): void {
   console.log('zCloak.ai Agent Registration Management');
   console.log('');
   console.log('Usage:');
-  console.log('  zcloak-agent register get-principal                      Get current principal ID');
-  console.log('  zcloak-agent register lookup                             Query current principal\'s agent name');
-  console.log('  zcloak-agent register lookup-by-name <agent_name>        Look up principal by agent name');
-  console.log('  zcloak-agent register lookup-by-principal <principal>     Look up agent name by principal');
-  console.log('  zcloak-agent register register <base_name>               Register new agent name');
-  console.log('  zcloak-agent register get-owner <principal>               Query agent\'s owner');
+  console.log('  zcloak-social register get-principal                      Get current principal ID');
+  console.log('  zcloak-social register lookup                             Query current principal\'s agent name');
+  console.log('  zcloak-social register lookup-by-name <agent_name>        Look up principal by agent name');
+  console.log('  zcloak-social register lookup-by-principal <principal>     Look up agent name by principal');
+  console.log('  zcloak-social register register <base_name>               Register new agent name');
+  console.log('  zcloak-social register get-owner <principal>               Query agent\'s owner');
   console.log('');
   console.log('Options:');
   console.log('  --env=prod|dev            Select environment (default: prod)');
   console.log('  --identity=<pem_path>     Specify identity PEM file');
   console.log('');
   console.log('Examples:');
-  console.log('  zcloak-agent register get-principal');
-  console.log('  zcloak-agent register lookup --env=dev');
-  console.log('  zcloak-agent register register my-agent');
-  console.log('  zcloak-agent register lookup-by-name "runner#8939.agent"');
+  console.log('  zcloak-social register get-principal');
+  console.log('  zcloak-social register lookup --env=dev');
+  console.log('  zcloak-social register register my-agent');
+  console.log('  zcloak-social register lookup-by-name "runner#8939.agent"');
 }
 
 // ========== Command Implementations ==========
@@ -66,7 +66,7 @@ async function cmdLookup(): Promise<void> {
 async function cmdLookupByPrincipal(principal: string | undefined): Promise<void> {
   if (!principal) {
     console.error('Error: principal ID is required');
-    console.error('Usage: zcloak-agent register lookup-by-principal <principal>');
+    console.error('Usage: zcloak-social register lookup-by-principal <principal>');
     process.exit(1);
   }
 
@@ -79,7 +79,7 @@ async function cmdLookupByPrincipal(principal: string | undefined): Promise<void
 async function cmdLookupByName(agentName: string | undefined): Promise<void> {
   if (!agentName) {
     console.error('Error: agent name is required');
-    console.error('Usage: zcloak-agent register lookup-by-name <agent_name>');
+    console.error('Usage: zcloak-social register lookup-by-name <agent_name>');
     process.exit(1);
   }
 
@@ -99,7 +99,7 @@ async function cmdLookupByName(agentName: string | undefined): Promise<void> {
 async function cmdRegister(baseName: string | undefined): Promise<void> {
   if (!baseName) {
     console.error('Error: base name is required');
-    console.error('Usage: zcloak-agent register register <base_name>');
+    console.error('Usage: zcloak-social register register <base_name>');
     process.exit(1);
   }
 
@@ -120,7 +120,7 @@ async function cmdRegister(baseName: string | undefined): Promise<void> {
 async function cmdGetOwner(principalOrName: string | undefined): Promise<void> {
   if (!principalOrName) {
     console.error('Error: principal or agent name is required');
-    console.error('Usage: zcloak-agent register get-owner <principal_or_agent_name>');
+    console.error('Usage: zcloak-social register get-owner <principal_or_agent_name>');
     process.exit(1);
   }
 

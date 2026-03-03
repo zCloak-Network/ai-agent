@@ -1,10 +1,10 @@
 {
-  "name": "zcloak-agent",
+  "name": "zcloak-social",
   "version": "1.0.0",
   "description": "zCloak.ai Agent CLI — sign, verify, register and interact with ICP canisters via @dfinity JS SDK",
   "license": "MIT",
   "bin": {
-    "zcloak-agent": "./dist/cli.js"
+    "zcloak-social": "./dist/cli.js"
   },
   "main": "./dist/utils.js",
   "types": "./dist/utils.d.ts",

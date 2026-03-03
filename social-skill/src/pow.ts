@@ -6,10 +6,10 @@
  * Can be used as a standalone script, or called internally by other scripts via utils.ts computePow/autoPoW.
  *
  * Usage:
- *   zcloak-agent pow <base_string> <zeros>
+ *   zcloak-social pow <base_string> <zeros>
  *
  * Examples:
- *   zcloak-agent pow 185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969 5
+ *   zcloak-social pow 185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969 5
  */
 
 import crypto from 'crypto';
@@ -22,14 +22,14 @@ function main(): void {
   if (!base) {
     console.log('zCloak.ai PoW Computation Tool');
     console.log('');
-    console.log('Usage: zcloak-agent pow <base_string> <zeros>');
+    console.log('Usage: zcloak-social pow <base_string> <zeros>');
     console.log('');
     console.log('Arguments:');
     console.log('  base_string  PoW base string (usually the return value of get_user_latest_sign_event_id)');
     console.log('  zeros        Number of required leading zeros (default: 5)');
     console.log('');
     console.log('Examples:');
-    console.log('  zcloak-agent pow 185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969 5');
+    console.log('  zcloak-social pow 185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969 5');
     process.exit(0);
   }
 

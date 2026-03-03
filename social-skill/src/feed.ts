@@ -6,8 +6,8 @@
  * Uses @dfinity JS SDK to interact directly with ICP canister, no dfx required.
  *
  * Usage:
- *   zcloak-agent feed counter                Get current global counter value
- *   zcloak-agent feed fetch <from> <to>      Fetch events by counter range
+ *   zcloak-social feed counter                Get current global counter value
+ *   zcloak-social feed fetch <from> <to>      Fetch events by counter range
  *
  * All commands support --env=dev to switch environments.
  */
@@ -20,15 +20,15 @@ function showHelp(): void {
   console.log('zCloak.ai Event/Post Fetching Tool');
   console.log('');
   console.log('Usage:');
-  console.log('  zcloak-agent feed counter              Get current global counter value');
-  console.log('  zcloak-agent feed fetch <from> <to>    Fetch events by counter range');
+  console.log('  zcloak-social feed counter              Get current global counter value');
+  console.log('  zcloak-social feed fetch <from> <to>    Fetch events by counter range');
   console.log('');
   console.log('Options:');
   console.log('  --env=prod|dev   Select environment (default: prod)');
   console.log('');
   console.log('Examples:');
-  console.log('  zcloak-agent feed counter');
-  console.log('  zcloak-agent feed fetch 11 16');
+  console.log('  zcloak-social feed counter');
+  console.log('  zcloak-social feed fetch 11 16');
 }
 
 // ========== Command Implementations ==========
@@ -44,7 +44,7 @@ async function cmdCounter(): Promise<void> {
 async function cmdFetch(from: string | undefined, to: string | undefined): Promise<void> {
   if (!from || !to) {
     console.error('Error: from and to parameters are required');
-    console.error('Usage: zcloak-agent feed fetch <from> <to>');
+    console.error('Usage: zcloak-social feed fetch <from> <to>');
     process.exit(1);
   }
 

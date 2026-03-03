@@ -7,10 +7,10 @@
  * Uses @dfinity JS SDK to interact directly with ICP canister, no dfx required.
  *
  * Usage:
- *   zcloak-agent verify message <content>            Verify message content
- *   zcloak-agent verify file <file_path>             Verify single file signature
- *   zcloak-agent verify folder <folder_path>         Verify folder signature (MANIFEST.sha256)
- *   zcloak-agent verify profile <principal>          Query Kind 1 identity profile
+ *   zcloak-social verify message <content>            Verify message content
+ *   zcloak-social verify file <file_path>             Verify single file signature
+ *   zcloak-social verify folder <folder_path>         Verify folder signature (MANIFEST.sha256)
+ *   zcloak-social verify profile <principal>          Query Kind 1 identity profile
  *
  * All commands support --env=dev to switch environments.
  */
@@ -33,18 +33,18 @@ function showHelp(): void {
   console.log('zCloak.ai Verification Tool');
   console.log('');
   console.log('Usage:');
-  console.log('  zcloak-agent verify message <content>        Verify message content');
-  console.log('  zcloak-agent verify file <file_path>         Verify single file signature');
-  console.log('  zcloak-agent verify folder <folder_path>     Verify folder signature (MANIFEST.sha256)');
-  console.log('  zcloak-agent verify profile <principal>      Query Kind 1 identity profile');
+  console.log('  zcloak-social verify message <content>        Verify message content');
+  console.log('  zcloak-social verify file <file_path>         Verify single file signature');
+  console.log('  zcloak-social verify folder <folder_path>     Verify folder signature (MANIFEST.sha256)');
+  console.log('  zcloak-social verify profile <principal>      Query Kind 1 identity profile');
   console.log('');
   console.log('Options:');
   console.log('  --env=prod|dev   Select environment (default: prod)');
   console.log('');
   console.log('Examples:');
-  console.log('  zcloak-agent verify message "hello"');
-  console.log('  zcloak-agent verify file ./report.pdf');
-  console.log('  zcloak-agent verify folder ./my-skill/');
+  console.log('  zcloak-social verify message "hello"');
+  console.log('  zcloak-social verify file ./report.pdf');
+  console.log('  zcloak-social verify folder ./my-skill/');
 }
 
 /**

@@ -6,10 +6,10 @@
  * Pure Node.js implementation, cross-platform compatible, no external shell commands required.
  *
  * Usage:
- *   zcloak-agent doc manifest <folder_path> [--version=1.0.0]    Generate MANIFEST.sha256 (with metadata header)
- *   zcloak-agent doc verify-manifest <folder_path>               Verify file integrity in MANIFEST.sha256
- *   zcloak-agent doc hash <file_path>                            Compute single file SHA256 hash
- *   zcloak-agent doc info <file_path>                            Show file hash, size, MIME, etc.
+ *   zcloak-social doc manifest <folder_path> [--version=1.0.0]    Generate MANIFEST.sha256 (with metadata header)
+ *   zcloak-social doc verify-manifest <folder_path>               Verify file integrity in MANIFEST.sha256
+ *   zcloak-social doc hash <file_path>                            Compute single file SHA256 hash
+ *   zcloak-social doc info <file_path>                            Show file hash, size, MIME, etc.
  */
 
 import fs from 'fs';
@@ -28,19 +28,19 @@ function showHelp(): void {
   console.log('zCloak.ai Document Tool');
   console.log('');
   console.log('Usage:');
-  console.log('  zcloak-agent doc manifest <folder_path> [--version=1.0.0]   Generate MANIFEST.sha256');
-  console.log('  zcloak-agent doc verify-manifest <folder_path>              Verify file integrity');
-  console.log('  zcloak-agent doc hash <file_path>                           Compute SHA256 hash');
-  console.log('  zcloak-agent doc info <file_path>                           Show file details');
+  console.log('  zcloak-social doc manifest <folder_path> [--version=1.0.0]   Generate MANIFEST.sha256');
+  console.log('  zcloak-social doc verify-manifest <folder_path>              Verify file integrity');
+  console.log('  zcloak-social doc hash <file_path>                           Compute SHA256 hash');
+  console.log('  zcloak-social doc info <file_path>                           Show file details');
   console.log('');
   console.log('Options:');
   console.log('  --version=x.y.z  MANIFEST version (default: 1.0.0)');
   console.log('');
   console.log('Examples:');
-  console.log('  zcloak-agent doc manifest ./my-skill/ --version=2.0.0');
-  console.log('  zcloak-agent doc verify-manifest ./my-skill/');
-  console.log('  zcloak-agent doc hash ./report.pdf');
-  console.log('  zcloak-agent doc info ./report.pdf');
+  console.log('  zcloak-social doc manifest ./my-skill/ --version=2.0.0');
+  console.log('  zcloak-social doc verify-manifest ./my-skill/');
+  console.log('  zcloak-social doc hash ./report.pdf');
+  console.log('  zcloak-social doc info ./report.pdf');
 }
 
 // ========== Command Implementations ==========

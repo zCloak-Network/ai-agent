@@ -7,7 +7,7 @@
  * Uses @dfinity JS SDK to interact directly with ICP canister, no dfx required.
  *
  * Usage:
- *   zcloak-agent bind prepare <user_principal>     Prepare binding and generate authentication URL
+ *   zcloak-social bind prepare <user_principal>     Prepare binding and generate authentication URL
  *
  * All commands support --env=dev to switch environments.
  * All commands support --identity=<pem_path> to specify identity file.
@@ -22,7 +22,7 @@ function showHelp(): void {
   console.log('zCloak.ai Agent-Owner Binding Tool');
   console.log('');
   console.log('Usage:');
-  console.log('  zcloak-agent bind prepare <user_principal>     Prepare binding and generate authentication URL');
+  console.log('  zcloak-social bind prepare <user_principal>     Prepare binding and generate authentication URL');
   console.log('');
   console.log('Options:');
   console.log('  --env=prod|dev            Select environment (default: prod)');
@@ -34,7 +34,7 @@ function showHelp(): void {
   console.log('  3. User opens the URL in browser and completes authentication with passkey');
   console.log('');
   console.log('Examples:');
-  console.log('  zcloak-agent bind prepare "57odc-ymip7-b7edu-aevpq-nu54m-q4paq-vsrtd-nlnmm-lkos3-d4h3t-7qe"');
+  console.log('  zcloak-social bind prepare "57odc-ymip7-b7edu-aevpq-nu54m-q4paq-vsrtd-nlnmm-lkos3-d4h3t-7qe"');
 }
 
 // ========== Command Implementations ==========
@@ -43,7 +43,7 @@ function showHelp(): void {
 async function cmdPrepare(userPrincipal: string | undefined): Promise<void> {
   if (!userPrincipal) {
     console.error('Error: user principal ID is required');
-    console.error('Usage: zcloak-agent bind prepare <user_principal>');
+    console.error('Usage: zcloak-social bind prepare <user_principal>');
     process.exit(1);
   }
 
