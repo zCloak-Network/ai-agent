@@ -19,7 +19,7 @@ import fs from 'fs';
 import path from 'path';
 import { generateKeyPairSync } from 'crypto';
 import { parseArgs } from './utils';
-import { getPrincipal, getPemPath, DEFAULT_PEM_PATH } from './identity';
+import { getPrincipal, getPemPath, DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity';
 
 // ========== Help ==========
 
@@ -92,19 +92,11 @@ function cmdGenerate(args: ReturnType<typeof parseArgs>): void {
 
   console.log(`Identity PEM generated: ${outputPath}`);
 
-  // Derive and display the Principal so the user can verify immediately.
-  // Temporarily inject --identity flag into argv so getPrincipal() picks up the new file.
-  const origArgv = process.argv;
-  process.argv = [
-    ...process.argv.filter(a => !a.startsWith('--identity=')),
-    `--identity=${outputPath}`,
-  ];
-  try {
-    const principal = getPrincipal();
-    console.log(`Principal ID:          ${principal}`);
-  } finally {
-    process.argv = origArgv;
-  }
+  // Derive and display the Principal from the newly written file so the user
+  // can verify immediately. We use loadIdentityFromPath() to bypass the global
+  // argv / cache lookup — no process.argv mutation needed.
+  const identity = loadIdentityFromPath(outputPath);
+  console.log(`Principal ID:          ${identity.getPrincipal().toText()}`);
 }
 
 /**

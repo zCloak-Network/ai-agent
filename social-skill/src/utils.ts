@@ -58,8 +58,12 @@ export async function autoPoW(): Promise<AutoPowResult> {
   console.error('Fetching PoW base...');
   const base = await actor.get_user_latest_sign_event_id(principal);
 
-  if (!base || typeof base !== 'string') {
-    console.error(`Failed to fetch PoW base: ${JSON.stringify(base)}`);
+  // The canister always returns a string (per IDL). An empty string "" is valid
+  // and represents a first-time user with no previous sign events — PoW is still
+  // computed as sha256("" + nonce). Only reject if the return value is not a string
+  // at all (which would indicate an unexpected canister response).
+  if (typeof base !== 'string') {
+    console.error(`Failed to fetch PoW base: unexpected value ${JSON.stringify(base)}`);
     process.exit(1);
   }
 

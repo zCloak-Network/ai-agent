@@ -156,9 +156,11 @@ async function cmdVerifyFolder(folderPath: string | undefined): Promise<void> {
   const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
   let allPassed = true;
 
-  for (const line of manifestContent.split('\n')) {
+  for (const rawLine of manifestContent.split('\n')) {
+    // Trim trailing \r so that CRLF line endings (Windows) don't corrupt file paths
+    const line = rawLine.trimEnd();
     // Skip comment lines and empty lines
-    if (!line.trim() || line.startsWith('#')) continue;
+    if (!line || line.startsWith('#')) continue;
 
     // Parse format: <hash>  ./<relative_path>  or  <hash>  <relative_path>
     const match = line.match(/^([a-f0-9]{64})\s+(.+)$/);

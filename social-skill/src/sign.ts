@@ -277,8 +277,9 @@ async function cmdSignFile(filePath: string | undefined, args: ParsedArgs): Prom
   };
   const contentJson = JSON.stringify(contentObj);
 
-  // Build tags
-  const tagsStr = args.tags || 't:document';
+  // Build tags — use typeof guard so that `--tags` (flag without value, args.tags === true)
+  // correctly falls back to the default instead of silently producing an empty tag list
+  const tagsStr = typeof args.tags === 'string' ? args.tags : 't:document';
   const tags = parseTags(tagsStr);
 
   const signParm: SignParm = {
@@ -329,8 +330,8 @@ async function cmdSignFolder(folderPath: string | undefined, args: ParsedArgs): 
   };
   const contentJson = JSON.stringify(contentObj);
 
-  // Build tags
-  const tagsStr = args.tags || 't:skill';
+  // Build tags — same typeof guard as cmdSignFile
+  const tagsStr = typeof args.tags === 'string' ? args.tags : 't:skill';
   const tags = parseTags(tagsStr);
 
   const signParm: SignParm = {

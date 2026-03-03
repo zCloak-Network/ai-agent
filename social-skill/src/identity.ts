@@ -73,36 +73,46 @@ export function getPemPath(): string {
 
 // ========== Identity Management ==========
 
-/** Cached identity instance */
+/** Cached identity instance (loaded from the resolved PEM path) */
 let _identity: Secp256k1KeyIdentity | null = null;
 
 /**
- * Load ECDSA secp256k1 identity from PEM file.
+ * Load an ECDSA secp256k1 identity directly from a given PEM file path.
+ *
+ * Unlike loadIdentity(), this function does NOT use the cached singleton and
+ * does NOT read the PEM path from argv/environment variables. It is intended
+ * for cases where the caller already knows the exact path (e.g. after generating
+ * a new key file).
  *
  * Uses Secp256k1KeyIdentity.fromPem() which handles the dfx PEM format:
  *   -----BEGIN EC PRIVATE KEY-----   (SEC1 / RFC 5915 format)
  *   <base64 encoded DER data>
  *   -----END EC PRIVATE KEY-----
  *
- * The library internally validates the OID (1.3.132.0.10 = secp256k1)
- * and extracts the 32-byte raw private key from the ASN.1 structure.
- *
- * Returns a cached instance on subsequent calls.
+ * @param pemPath - Absolute path to the PEM file
+ * @returns Secp256k1KeyIdentity
  */
-export function loadIdentity(): Secp256k1KeyIdentity {
-  if (_identity) return _identity;
-
-  const pemPath = getPemPath();
+export function loadIdentityFromPath(pemPath: string): Secp256k1KeyIdentity {
   const pemContent = fs.readFileSync(pemPath, 'utf-8');
-
   try {
-    _identity = Secp256k1KeyIdentity.fromPem(pemContent);
+    return Secp256k1KeyIdentity.fromPem(pemContent);
   } catch (err) {
     console.error(`Error: failed to load ECDSA secp256k1 identity from ${pemPath}`);
     console.error((err as Error).message);
     process.exit(1);
   }
+}
 
+/**
+ * Load ECDSA secp256k1 identity, resolving the PEM path from argv / env / default.
+ *
+ * Returns a cached instance on subsequent calls to avoid re-reading the file.
+ */
+export function loadIdentity(): Secp256k1KeyIdentity {
+  if (_identity) return _identity;
+
+  const pemPath = getPemPath();
+  _identity = loadIdentityFromPath(pemPath);
   return _identity;
 }
 
