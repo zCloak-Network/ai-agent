@@ -203,6 +203,14 @@ async function cmdInteraction(eventId: string | undefined, reaction: string, con
     process.exit(1);
   }
 
+  // Reply must have non-empty content; like/dislike always pass '' so this only
+  // triggers when the user forgets the text argument for `sign reply`.
+  if (reaction === 'reply' && !content) {
+    console.error('Error: reply content is required');
+    console.error('Usage: zcloak-agent sign reply <event_id> <content>');
+    process.exit(1);
+  }
+
   const tags: string[][] = [
     ['e', eventId],
     ['reaction', reaction],

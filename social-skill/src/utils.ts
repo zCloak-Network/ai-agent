@@ -13,7 +13,7 @@ import path from 'path';
 import crypto from 'crypto';
 import config, { getEnv, getCanisterIds, getEnvLabel } from './config';
 import { getSignActor } from './icAgent';
-import { getPrincipal, getPrincipalObj } from './identity';
+import { getPrincipalObj, resolvePemPath, loadIdentityFromPath } from './identity';
 import type { ParsedArgs, PowResult, AutoPowResult, ManifestOptions, ManifestResult } from './types/common';
 import type { SignEvent, SignResult } from './types/sign-event';
 
@@ -222,12 +222,19 @@ export function generateManifest(folderPath: string, options?: ManifestOptions):
   const version = options?.version || '1.0.0';
   const manifestPath = path.join(folderPath, 'MANIFEST.sha256');
 
-  // Get author (current principal)
+  // Get author (current principal, if a PEM file is available).
+  // IMPORTANT: getPrincipal() calls process.exit() when no PEM is found,
+  // and process.exit() cannot be caught by try-catch in Node.js.
+  // We therefore use resolvePemPath() first — it returns null without exiting —
+  // so that `doc manifest` works even without an identity configured.
   let author = '';
-  try {
-    author = getPrincipal();
-  } catch {
-    console.error('Warning: unable to get principal, author field left empty');
+  const pemPath = resolvePemPath();
+  if (pemPath) {
+    try {
+      author = loadIdentityFromPath(pemPath).getPrincipal().toText();
+    } catch {
+      console.error('Warning: identity PEM found but failed to parse, author field left empty');
+    }
   }
 
   // Build metadata header

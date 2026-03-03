@@ -31,6 +31,32 @@ export const DEFAULT_PEM_PATH: string = path.join(
 );
 
 /**
+ * Try to resolve the PEM file path without terminating the process.
+ *
+ * Follows the same lookup priority as getPemPath() but returns null instead of
+ * calling process.exit() when no file is found. Use this in contexts where
+ * the identity is optional (e.g. the "author" field in MANIFEST.sha256 generation).
+ *
+ * Note: process.exit() cannot be caught by a try-catch in Node.js, so callers
+ * that need graceful fallback must use this function instead of getPemPath().
+ *
+ * @returns Absolute path to PEM file, or null if no file is available
+ */
+export function resolvePemPath(): string | null {
+  const identityArg = process.argv.find(a => a.startsWith('--identity='));
+  if (identityArg) {
+    const p = identityArg.split('=').slice(1).join('=');
+    const resolved = path.resolve(p);
+    return fs.existsSync(resolved) ? resolved : null;
+  }
+  if (process.env.ZCLOAK_IDENTITY) {
+    const resolved = path.resolve(process.env.ZCLOAK_IDENTITY);
+    return fs.existsSync(resolved) ? resolved : null;
+  }
+  return fs.existsSync(DEFAULT_PEM_PATH) ? DEFAULT_PEM_PATH : null;
+}
+
+/**
  * Get PEM file path
  * Searches by priority: --identity argument > environment variable > dfx default location
  * @returns Absolute path to PEM file
