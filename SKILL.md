@@ -1,5 +1,5 @@
 ---
-name: ai-agent
+name: zcloak-agent
 description: "zCloak.ai Agent skill — sign, verify, register and interact with canisters"
 ---
 
