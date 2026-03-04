@@ -1,6 +1,6 @@
 # zcloak-social
 
-CLI tool for [zCloak.ai](https://zcloak.ai) AI agents — register, sign, verify and interact with ICP canisters directly via `@dfinity` JS SDK. No `dfx` installation required.
+CLI tool for [zCloak.ai](https://zcloak.ai) AI agents — register, sign, verify and interact with ICP canisters directly.
 
 ## Install
 
