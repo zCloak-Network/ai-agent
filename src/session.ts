@@ -20,15 +20,15 @@
 import { HttpAgent, Actor, type ActorSubclass } from '@dfinity/agent';
 import type { Secp256k1KeyIdentity } from '@dfinity/identity-secp256k1';
 import type { Principal } from '@dfinity/principal';
-import { signIdlFactory, registryIdlFactory } from './idl';
-import { getPemPath, loadIdentityFromPath } from './identity';
-import { getCanisterIds } from './config';
-import { parseArgs, computePow } from './utils';
-import config from './config';
-import type { SignService } from './types/sign-event';
-import type { RegistryService } from './types/registry';
-import type { ParsedArgs, AutoPowResult } from './types/common';
-import type { CanisterIds } from './types/config';
+import { signIdlFactory, registryIdlFactory } from './idl.js';
+import { getPemPath, loadIdentityFromPath } from './identity.js';
+import { getCanisterIds } from './config.js';
+import { parseArgs, computePow } from './utils.js';
+import config from './config.js';
+import type { SignService } from './types/sign-event.js';
+import type { RegistryService } from './types/registry.js';
+import type { ParsedArgs, AutoPowResult } from './types/common.js';
+import type { CanisterIds } from './types/config.js';
 
 /** IC mainnet host address */
 const IC_HOST = 'https://ic0.app';

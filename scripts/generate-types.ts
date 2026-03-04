@@ -15,6 +15,10 @@
 
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+/** ESM equivalent of __dirname */
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { IDL } from '@dfinity/candid';
 import {
   buildSignTypes,
@@ -417,7 +421,7 @@ function generateRegistryFile(
   lines.push('');
   lines.push("import type { Principal } from '@dfinity/principal';");
   lines.push("import type { ActorMethod } from '@dfinity/agent';");
-  lines.push("import type { CandidOpt } from './sign-event';");
+  lines.push("import type { CandidOpt } from './sign-event.js';");
   lines.push('');
 
   // Position interface

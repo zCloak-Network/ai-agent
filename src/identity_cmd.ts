@@ -18,9 +18,9 @@
 import fs from 'fs';
 import path from 'path';
 import { generateKeyPairSync } from 'crypto';
-import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity';
-import { Session } from './session';
-import type { ParsedArgs } from './types/common';
+import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity.js';
+import { Session } from './session.js';
+import type { ParsedArgs } from './types/common.js';
 
 // ========== Help ==========
 

@@ -11,8 +11,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import { run } from '../verify';
-import type { Session } from '../session';
+import { run } from '../verify.js';
+import type { Session } from '../session.js';
 
 // Mock process.exit to prevent test runner from exiting
 const mockExit = vi.spyOn(process, 'exit').mockImplementation((() => {

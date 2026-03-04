@@ -19,9 +19,9 @@ import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import crypto from 'crypto';
-import { KeyStore } from '../key-store';
-import { runDaemonUds, runDaemonStdio } from '../serve';
-import { socketPath, pidPath } from '../daemon';
+import { KeyStore } from '../key-store.js';
+import { runDaemonUds, runDaemonStdio } from '../serve.js';
+import { socketPath, pidPath } from '../daemon.js';
 
 // ============================================================================
 // Helpers

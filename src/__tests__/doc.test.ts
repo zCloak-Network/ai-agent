@@ -10,8 +10,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import { Session } from '../session';
-import { run } from '../doc';
+import { Session } from '../session.js';
+import { run } from '../doc.js';
 
 // Mock process.exit to prevent test runner from exiting
 const mockExit = vi.spyOn(process, 'exit').mockImplementation((() => {

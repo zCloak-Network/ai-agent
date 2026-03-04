@@ -22,9 +22,9 @@ import {
   verifyManifestEntries,
   formatSignEvent,
   formatSignEvents,
-} from './utils';
-import { Session } from './session';
-import type { SignEvent } from './types/sign-event';
+} from './utils.js';
+import { Session } from './session.js';
+import type { SignEvent } from './types/sign-event.js';
 
 // ========== Help Information ==========
 function showHelp(): void {

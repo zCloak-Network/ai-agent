@@ -25,7 +25,7 @@ import {
   formatSignResult,
   formatOptText,
   buildEventUrl,
-} from '../utils';
+} from '../utils.js';
 
 // ========== Temp directory helpers ==========
 

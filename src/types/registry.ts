@@ -3,7 +3,7 @@
  *
  * Run `npm run generate-types` to regenerate this file.
  * Source: registryIdlFactory in src/idl.ts
- * Generated: 2026-03-04T09:03:10.223Z
+ * Generated: 2026-03-04T09:23:39.567Z
  *
  * These types are derived from the Candid IDL definitions and correspond to
  * the canister's runtime interface. Edit idl.ts to change type definitions.
@@ -11,7 +11,7 @@
 
 import type { Principal } from '@dfinity/principal';
 import type { ActorMethod } from '@dfinity/agent';
-import type { CandidOpt } from './sign-event';
+import type { CandidOpt } from './sign-event.js';
 
 /** Position record — position information in the registry canister */
 export interface Position {

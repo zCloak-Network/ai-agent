@@ -18,10 +18,10 @@ With this skill, an AI agent can:
 
 ## 1. Setup
 
-### 1.1 Install
+### 1.1 Install & Update
 
 ```bash
-npm install -g @zcloak/ai-agent 
+npm install -g @zcloak/ai-agent@latest
 ```
 
 ### 1.2 Identity

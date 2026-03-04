@@ -5,6 +5,7 @@
   "bin": {
     "zcloak-ai": "./dist/cli.js"
   },
+  "type": "module",
   "main": "./dist/utils.js",
   "types": "./dist/utils.d.ts",
   "files": [

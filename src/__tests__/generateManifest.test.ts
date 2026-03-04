@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import { generateManifest } from '../utils';
+import { generateManifest } from '../utils.js';
 
 let tmpDir: string;
 

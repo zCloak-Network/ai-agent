@@ -20,12 +20,12 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { createConnection } from 'net';
 import { createInterface } from 'readline';
-import type { Session } from './session';
-import * as cryptoOps from './crypto';
-import { KeyStore } from './key-store';
-import { runDaemonUds, runDaemonStdio } from './serve';
-import { findRunningDaemon } from './daemon';
-import { ToolError, canisterCallError } from './error';
+import type { Session } from './session.js';
+import * as cryptoOps from './crypto.js';
+import { KeyStore } from './key-store.js';
+import { runDaemonUds, runDaemonStdio } from './serve.js';
+import { findRunningDaemon } from './daemon.js';
+import { ToolError, canisterCallError } from './error.js';
 
 // ============================================================================
 // Module Entry Point

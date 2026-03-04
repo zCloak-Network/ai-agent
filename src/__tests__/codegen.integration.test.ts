@@ -8,8 +8,9 @@
 import { describe, it, expect } from 'vitest';
 import { execSync } from 'child_process';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const projectRoot = path.resolve(__dirname, '..', '..');
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 describe('IDL codegen', () => {
   it('generated type files are in sync with IDL (check mode)', () => {

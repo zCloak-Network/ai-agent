@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { generateKeyPairSync } from 'crypto';
-import { loadIdentityFromPath } from '../identity';
+import { loadIdentityFromPath } from '../identity.js';
 
 let tmpDir: string;
 

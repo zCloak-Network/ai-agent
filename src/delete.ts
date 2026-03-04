@@ -16,7 +16,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { Session } from './session';
+import { Session } from './session.js';
 
 // ========== Help Information ==========
 function showHelp(): void {

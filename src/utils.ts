@@ -8,10 +8,10 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import config from './config';
-import { getPemPath, loadIdentityFromPath } from './identity';
-import type { ParsedArgs, PowResult, ManifestOptions, ManifestResult, ManifestEntry, ManifestVerifyResult } from './types/common';
-import type { SignEvent, SignResult } from './types/sign-event';
+import config from './config.js';
+import { getPemPath, loadIdentityFromPath } from './identity.js';
+import type { ParsedArgs, PowResult, ManifestOptions, ManifestResult, ManifestEntry, ManifestVerifyResult } from './types/common.js';
+import type { SignEvent, SignResult } from './types/sign-event.js';
 
 // ========== PoW Computation ==========
 

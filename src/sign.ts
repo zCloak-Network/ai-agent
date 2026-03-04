@@ -35,10 +35,10 @@ import {
   generateManifest,
   formatSignResult,
   formatSignEvent,
-} from './utils';
-import { Session } from './session';
-import type { SignParm } from './types/sign-event';
-import type { ParsedArgs } from './types/common';
+} from './utils.js';
+import { Session } from './session.js';
+import type { SignParm } from './types/sign-event.js';
+import type { ParsedArgs } from './types/common.js';
 
 // ========== Help Information ==========
 function showHelp(): void {

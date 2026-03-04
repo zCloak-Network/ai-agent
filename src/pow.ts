@@ -13,7 +13,7 @@
  */
 
 import crypto from 'crypto';
-import { Session } from './session';
+import { Session } from './session.js';
 
 // ========== Exported run() — called by cli.ts ==========
 

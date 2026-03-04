@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from '
 import { join } from 'path';
 import { homedir } from 'os';
 import crypto from 'crypto';
-import { daemonError } from './error';
+import { daemonError } from './error.js';
 
 /** Runtime directory name under home directory */
 const RUNTIME_DIR_NAME = ".vetkey-tool";

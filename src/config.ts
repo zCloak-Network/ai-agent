@@ -5,7 +5,7 @@
  * All scripts obtain configuration through this file.
  */
 
-import type { AppConfig, CanisterIds } from './types/config';
+import type { AppConfig, CanisterIds } from './types/config.js';
 
 const config: AppConfig = {
   // Canister IDs

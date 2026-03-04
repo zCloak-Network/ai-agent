@@ -19,8 +19,8 @@
  */
 
 import type { ActorSubclass } from '@dfinity/agent';
-import * as cryptoOps from './crypto';
-import { encryptionError, canisterCallError } from './error';
+import * as cryptoOps from './crypto.js';
+import { encryptionError, canisterCallError } from './error.js';
 
 /**
  * In-memory AES-256 key holder for daemon mode.

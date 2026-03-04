@@ -3,8 +3,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getCanisterIds } from '../config';
-import config from '../config';
+import { getCanisterIds } from '../config.js';
+import config from '../config.js';
 
 // ========== getCanisterIds ==========
 

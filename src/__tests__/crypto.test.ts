@@ -17,7 +17,7 @@ import {
   vetkeyToAes256,
   makeIbeIdentity,
   generateTransportKeypair,
-} from '../crypto';
+} from '../crypto.js';
 
 describe('AES-256-GCM (VKDA format)', () => {
   // Use a fixed key for reproducible tests

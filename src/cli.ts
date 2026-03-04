@@ -29,7 +29,11 @@
  */
 
 import path from 'path';
-import { Session } from './session';
+import { fileURLToPath } from 'url';
+import { Session } from './session.js';
+
+/** ESM equivalent of __dirname */
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Supported modules and their corresponding script files (compiled in dist/ directory) */
 const MODULES: Record<string, string> = {
@@ -119,8 +123,7 @@ async function main(): Promise<void> {
 
   // Load and execute sub-script's run() function.
   // After compilation, __dirname points to dist/, sub-scripts are in the same directory.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const mod = require(scriptPath);
+  const mod = await import(scriptPath);
   await mod.run(session);
 }
 

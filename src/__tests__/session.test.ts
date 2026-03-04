@@ -9,8 +9,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { Session } from '../session';
-import config from '../config';
+import { Session } from '../session.js';
+import config from '../config.js';
 
 describe('Session construction', () => {
   it('parses args from argv correctly', () => {

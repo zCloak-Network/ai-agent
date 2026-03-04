@@ -11,14 +11,14 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
-import { KeyStore } from '../key-store';
+import { KeyStore } from '../key-store.js';
 
 // ============================================================================
 // Mock crypto module to control the VetKey derivation pipeline
 // ============================================================================
 
-vi.mock('../crypto', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../crypto')>();
+vi.mock('../crypto.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../crypto.js')>();
   return {
     ...actual,
     // Mock IBE / transport layer functions (require real @dfinity/vetkeys at runtime)
@@ -27,7 +27,7 @@ vi.mock('../crypto', async (importOriginal) => {
   };
 });
 
-import * as cryptoOps from '../crypto';
+import * as cryptoOps from '../crypto.js';
 
 // ============================================================================
 // Helper: create a mock canister actor

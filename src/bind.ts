@@ -14,7 +14,7 @@
  * All commands support --identity=<pem_path> to specify identity file.
  */
 
-import { Session } from './session';
+import { Session } from './session.js';
 
 // ========== Help Information ==========
 function showHelp(): void {

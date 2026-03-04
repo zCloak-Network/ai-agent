@@ -16,8 +16,8 @@
  * All commands support --identity=<pem_path> to specify identity file.
  */
 
-import { formatOptText } from './utils';
-import { Session } from './session';
+import { formatOptText } from './utils.js';
+import { Session } from './session.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -150,7 +150,7 @@ async function cmdGetOwner(session: Session, principalOrName: string | undefined
         lines.push(`  is_human = ${pos.is_human}`);
         if (pos.connection_list && pos.connection_list.length > 0) {
           const connList = pos.connection_list
-            .map(c => `    principal "${c.toText()}"`)
+            .map((c: { toText(): string }) => `    principal "${c.toText()}"`)
             .join('\n');
           lines.push(`  connection_list = vec {\n${connList}\n  }`);
         }

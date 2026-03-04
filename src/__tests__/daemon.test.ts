@@ -18,7 +18,7 @@ import {
   pidPath,
   runtimeDir,
   DaemonRuntime,
-} from '../daemon';
+} from '../daemon.js';
 
 describe('sanitizeDerivationId', () => {
   it('should replace colons with underscores', () => {

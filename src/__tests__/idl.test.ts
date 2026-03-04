@@ -11,7 +11,7 @@ import {
   buildRegistryService,
   signIdlFactory,
   registryIdlFactory,
-} from '../idl';
+} from '../idl.js';
 
 // ========== buildSignTypes ==========
 

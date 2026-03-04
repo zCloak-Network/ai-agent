@@ -22,7 +22,7 @@ import {
   IbeIdentity,
   IbeSeed,
 } from '@dfinity/vetkeys';
-import { encryptionError, decryptionError } from './error';
+import { encryptionError, decryptionError } from './error.js';
 
 // ============================================================================
 // Constants

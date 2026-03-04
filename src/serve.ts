@@ -24,8 +24,8 @@ import { createServer, type Socket } from 'net';
 import { createInterface } from 'readline';
 import { readFileSync, writeFileSync, statSync } from 'fs';
 import type { Readable, Writable } from 'stream';
-import { KeyStore } from './key-store';
-import { DaemonRuntime } from './daemon';
+import { KeyStore } from './key-store.js';
+import { DaemonRuntime } from './daemon.js';
 import {
   type RpcRequest,
   type RpcResponse,
@@ -38,7 +38,7 @@ import {
   errorResponse,
   parseRpcRequest,
   isErrorResponse,
-} from './rpc';
+} from './rpc.js';
 
 /** Maximum data size for encrypt/decrypt operations (1 GB) */
 const MAX_DATA_SIZE = 1024 * 1024 * 1024;

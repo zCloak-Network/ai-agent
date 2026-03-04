@@ -13,7 +13,7 @@ import {
   isErrorResponse,
   successResponse,
   errorResponse,
-} from '../rpc';
+} from '../rpc.js';
 
 describe('parseRpcRequest', () => {
   it('should parse valid encrypt request (file mode)', () => {

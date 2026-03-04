@@ -20,9 +20,9 @@ import {
   getMimeType,
   generateManifest,
   verifyManifestEntries,
-} from './utils';
-import { Session } from './session';
-import type { ParsedArgs } from './types/common';
+} from './utils.js';
+import { Session } from './session.js';
+import type { ParsedArgs } from './types/common.js';
 
 // ========== Help Information ==========
 function showHelp(): void {

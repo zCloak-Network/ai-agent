@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { run } from '../register';
-import type { Session } from '../session';
+import { run } from '../register.js';
+import type { Session } from '../session.js';
 
 // Mock process.exit to prevent test runner from exiting
 const mockExit = vi.spyOn(process, 'exit').mockImplementation((() => {

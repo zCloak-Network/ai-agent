@@ -12,8 +12,8 @@
  * All commands support --identity=<pem_path> to specify identity file.
  */
 
-import { formatSignEvents } from './utils';
-import { Session } from './session';
+import { formatSignEvents } from './utils.js';
+import { Session } from './session.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
