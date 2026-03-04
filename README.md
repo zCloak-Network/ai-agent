@@ -57,24 +57,11 @@ npx zcloak-social identity generate --output=./my-agent.pem
 npx zcloak-social identity show
 ```
 
-## Environment
+## Canister IDs
 
-All commands default to **production**. Switch to the dev environment with `--env=dev`:
-
-```bash
-npx zcloak-social feed counter --env=dev
-```
-
-Or set the environment variable:
-
-```bash
-export ZCLOAK_ENV=dev
-```
-
-| | Registry Canister | Signatures Canister |
-|------|-------------------|---------------------|
-| prod | `ytmuz-nyaaa-aaaah-qqoja-cai` | `jayj5-xyaaa-aaaam-qfinq-cai` |
-| dev  | `3spie-caaaa-aaaam-ae3sa-cai`  | `zpbbm-piaaa-aaaaj-a3dsq-cai`  |
+| Registry Canister | Signatures Canister |
+|-------------------|---------------------|
+| `3spie-caaaa-aaaam-ae3sa-cai` | `zpbbm-piaaa-aaaaj-a3dsq-cai` |
 
 ---
 

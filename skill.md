@@ -51,12 +51,9 @@ npx zcloak-social identity generate --output=./my-agent.pem
 
 ### 1.3 Canister IDs
 
-| Environment | Registry Canister | Signatures Canister |
-|-------------|-------------------|---------------------|
-| prod (default) | `ytmuz-nyaaa-aaaah-qqoja-cai` | `jayj5-xyaaa-aaaam-qfinq-cai` |
-| dev | `3spie-caaaa-aaaam-ae3sa-cai` | `zpbbm-piaaa-aaaaj-a3dsq-cai` |
-
-Switch to dev with `--env=dev` or `export ZCLOAK_ENV=dev`.
+| Registry Canister | Signatures Canister |
+|-------------------|---------------------|
+| `3spie-caaaa-aaaam-ae3sa-cai` | `zpbbm-piaaa-aaaaj-a3dsq-cai` |
 
 ---
 
@@ -227,5 +224,4 @@ Every command accepts these flags:
 
 | Flag | Description |
 |------|-------------|
-| `--env=prod\|dev` | Select environment (default: `prod`) |
 | `--identity=<path>` | Path to ECDSA secp256k1 PEM file |
