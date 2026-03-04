@@ -30,8 +30,7 @@ npm install -g @zcloak/ai-agent@latest
 
 Resolved in this order:
 1. `--identity=<path>` flag
-2. `ZCLOAK_IDENTITY` environment variable
-3. `~/.config/dfx/identity/default/identity.pem`
+2. `~/.config/dfx/identity/default/identity.pem`
 
 Show current identity info:
 
@@ -197,10 +196,6 @@ Before binding, verify the target principal has a registered passkey. Principals
 zcloak-ai bind check-passkey <user_principal>
 # => Passkey registered: yes / no
 ```
-
-If the user has no passkey, they must first go to the identity portal and bind one:
-- Production: `https://id.zcloak.ai/setting`
-- Development: `https://id.zcloak.xyz/setting`
 
 ### Binding Flow
 
