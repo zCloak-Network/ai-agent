@@ -115,7 +115,7 @@ async function main(): Promise<void> {
   // Construct sub-argv without mutating process.argv.
   // Format: [node_binary, script_path, ...remaining_args]
   // This preserves the same index layout that parseArgs() expects (skips first 2 elements).
-  const scriptPath = path.join(__dirname, scriptFile);
+  const scriptPath = path.join(__dirname, `${scriptFile}.js`);
   const subArgv = [process.argv[0]!, scriptPath, ...process.argv.slice(3)];
 
   // Create a Session from the constructed argv
