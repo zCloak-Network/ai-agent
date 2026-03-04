@@ -373,11 +373,25 @@ export function formatSignEvents(events: SignEvent[]): string {
 }
 
 /**
- * Format agent_sign return value (Ok/Err variant)
+ * Build a full event view URL from an event ID.
+ * Uses the configured event_url prefix from config.
+ * @param eventId - The unique event ID (sha256 hash)
+ * @returns Full URL to view the event on the website
+ */
+export function buildEventUrl(eventId: string): string {
+  return `${config.event_url}${eventId}`;
+}
+
+/**
+ * Format agent_sign return value (Ok/Err variant).
+ * On success, appends a "View:" line with the event URL so the agent
+ * can present a clickable link to the user.
  */
 export function formatSignResult(result: SignResult): string {
   if ('Ok' in result) {
-    return `(variant { Ok = ${formatSignEvent(result.Ok)} })`;
+    const formatted = `(variant { Ok = ${formatSignEvent(result.Ok)} })`;
+    const url = buildEventUrl(result.Ok.id);
+    return `${formatted}\n\nView: ${url}`;
   }
   if ('Err' in result) {
     return `(variant { Err = "${result.Err}" })`;

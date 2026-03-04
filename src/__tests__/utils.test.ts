@@ -24,6 +24,7 @@ import {
   formatSignEvents,
   formatSignResult,
   formatOptText,
+  buildEventUrl,
 } from '../utils';
 
 // ========== Temp directory helpers ==========
@@ -399,8 +400,15 @@ describe('formatSignEvents', () => {
   });
 });
 
+describe('buildEventUrl', () => {
+  it('builds a full event URL from event ID', () => {
+    const url = buildEventUrl('abc123def456');
+    expect(url).toBe('https://social.zcloak.xyz/post/abc123def456');
+  });
+});
+
 describe('formatSignResult', () => {
-  it('formats Ok variant', () => {
+  it('formats Ok variant with event view URL', () => {
     const event = {
       id: 'abc', kind: 4, ai_id: 'p', created_at: BigInt(0),
       content_hash: 'h', counter: [] as [] | [number],
@@ -409,11 +417,14 @@ describe('formatSignResult', () => {
     const result = formatSignResult({ Ok: event });
     expect(result).toContain('variant { Ok =');
     expect(result).toContain('id = "abc"');
+    // Should include the view URL
+    expect(result).toContain('View: https://social.zcloak.xyz/post/abc');
   });
 
-  it('formats Err variant', () => {
+  it('formats Err variant without URL', () => {
     const result = formatSignResult({ Err: 'PoW failed' });
     expect(result).toContain('variant { Err = "PoW failed"');
+    expect(result).not.toContain('View:');
   });
 });
 

@@ -30,9 +30,10 @@ describe('config object', () => {
     expect(config.pow_zeros).toBeGreaterThan(0);
   });
 
-  it('has bind_url, profile_url, and twofa_url', () => {
+  it('has bind_url, profile_url, twofa_url, and event_url', () => {
     expect(config.bind_url).toContain('https://');
     expect(config.profile_url).toContain('https://');
     expect(config.twofa_url).toContain('https://');
+    expect(config.event_url).toContain('https://');
   });
 });

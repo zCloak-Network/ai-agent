@@ -24,4 +24,6 @@ export interface AppConfig {
   profile_url: string;
   /** 2FA verification page URL */
   twofa_url: string;
+  /** Event view page URL prefix (appended with event ID to form the full URL) */
+  event_url: string;
 }

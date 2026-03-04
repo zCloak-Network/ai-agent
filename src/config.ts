@@ -21,6 +21,8 @@ const config: AppConfig = {
   profile_url: 'https://id.zcloak.xyz/profile/',
   // 2FA verification page URL
   twofa_url: 'https://id.zcloak.xyz/agent/2fa',
+  // Event view page URL prefix (append event ID to form the full URL)
+  event_url: 'https://social.zcloak.xyz/post/',
 };
 
 export default config;
