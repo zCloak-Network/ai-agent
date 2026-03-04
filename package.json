@@ -1,5 +1,5 @@
 {
-  "name": "ai-agent",
+  "name": "@zcloak/ai-agent",
   "version": "1.0.0",
   "description": "zCloak.ai Agent CLI — sign, verify, register and interact with canisters",
   "bin": {
@@ -24,6 +24,9 @@
     "test:watch": "vitest",
     "prepare": "npm run clean && npm run build",
     "prepublishOnly": "npm run clean && npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "zcloak",
