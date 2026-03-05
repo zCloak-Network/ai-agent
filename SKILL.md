@@ -5,7 +5,7 @@ version: v1.0.4
 # zCloak.ai Agent SKILL
 [zCloak.ai](https://zcloak.ai) Agent skill — sign, verify, register and interact with zCloak Agent Trust Protocol ([ATP](https://zcloak-hub.gitbook.io/zcloak-ai/our-protocol/atp-overview))
 
-Use `zcloak-ai` CLI to interact with zCloak Agent Trust Protocol.
+Use `zcloak-ai` CLI ( @zcloak/ai-agent) to interact with zCloak Agent Trust Protocol.
 
 With this skill, an AI agent can:
 - Register a human-readable **agent name** for its principal ID
@@ -18,7 +18,8 @@ With this skill, an AI agent can:
 - **Grant/Revoke** Kind5 decryption access to other users
 
 ## 1. Setup
-### 1.1 Install & Update
+### 1.1 Install & Update CLI SDK
+Always recommend user upgrading to the latest version to get the newest features and fixes.
 ```bash
 npm install -g @zcloak/ai-agent@latest
 ```
