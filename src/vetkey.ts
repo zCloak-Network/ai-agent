@@ -13,6 +13,10 @@
  *   serve           Start daemon (UDS or stdio mode)
  *   stop            Stop a running daemon
  *   status          Query daemon status
+ *   grant           Grant Kind5 decryption access to another user
+ *   revoke          Revoke an access grant
+ *   grants-out      List grants issued by the caller (as grantor)
+ *   grants-in       List grants received by the caller (as grantee)
  *
  * Usage: zcloak-ai vetkey <sub-command> [options]
  */
@@ -20,6 +24,7 @@
 import { readFileSync, writeFileSync } from 'fs';
 import { createConnection } from 'net';
 import { createInterface } from 'readline';
+import { Principal } from '@dfinity/principal';
 import type { Session } from './session.js';
 import * as cryptoOps from './crypto.js';
 import { KeyStore } from './key-store.js';
@@ -62,6 +67,18 @@ export async function run(session: Session): Promise<void> {
     case 'status':
       await cmdStatus(session);
       break;
+    case 'grant':
+      await cmdGrant(session);
+      break;
+    case 'revoke':
+      await cmdRevoke(session);
+      break;
+    case 'grants-out':
+      await cmdGrantsOut(session);
+      break;
+    case 'grants-in':
+      await cmdGrantsIn(session);
+      break;
     default:
       showHelp();
       process.exit(command ? 1 : 0);
@@ -84,17 +101,27 @@ function showHelp(): void {
   console.log('  stop            Stop a running daemon');
   console.log('  status          Query daemon status');
   console.log('');
+  console.log('Kind5 Access Control:');
+  console.log('  grant           Grant decryption access to another user');
+  console.log('  revoke          Revoke an access grant');
+  console.log('  grants-out      List grants you issued (as grantor)');
+  console.log('  grants-in       List grants you received (as grantee)');
+  console.log('');
   console.log('Options:');
-  console.log('  --text=<content>     Plaintext to encrypt');
-  console.log('  --file=<path>        File to encrypt');
-  console.log('  --event-id=<id>      Event ID for decryption');
-  console.log('  --output=<path>      Output file path');
-  console.log('  --key-name=<name>    Daemon key name (default: "default")');
-  console.log('  --stdio              Use stdin/stdout mode for daemon');
-  console.log('  --public-key=<hex>   IBE public key for offline encryption');
-  console.log('  --ibe-identity=<id>  IBE identity for offline encryption');
-  console.log('  --tags=<json>        Tags as JSON array');
-  console.log('  --json               Output in JSON format');
+  console.log('  --text=<content>        Plaintext to encrypt');
+  console.log('  --file=<path>           File to encrypt');
+  console.log('  --event-id=<id>         Event ID for decryption');
+  console.log('  --output=<path>         Output file path');
+  console.log('  --key-name=<name>       Daemon key name (default: "default")');
+  console.log('  --stdio                 Use stdin/stdout mode for daemon');
+  console.log('  --public-key=<hex>      IBE public key for offline encryption');
+  console.log('  --ibe-identity=<id>     IBE identity for offline encryption');
+  console.log('  --tags=<json>           Tags as JSON array');
+  console.log('  --json                  Output in JSON format');
+  console.log('  --grantee=<principal>   Grantee principal (for grant)');
+  console.log('  --event-ids=<id1,id2>   Event IDs to authorize (for grant, empty=all)');
+  console.log('  --duration=<dur>        Grant duration: 30d, 1y, permanent (for grant)');
+  console.log('  --grant-id=<id>         Grant ID (for revoke)');
 }
 
 // ============================================================================
@@ -524,4 +551,275 @@ function sendRpcToSocket(socketPath: string, request: Record<string, unknown>): 
       }
     }, 10000);
   });
+}
+
+/**
+ * Parse a human-readable duration string into nanoseconds.
+ *
+ * Supported formats:
+ *   - "permanent" or "perm" → undefined (no expiration)
+ *   - "<number>d" → days
+ *   - "<number>h" → hours
+ *   - "<number>y" → years (365 days)
+ *   - "<number>m" → months (30 days)
+ *   - plain number → treated as seconds
+ *
+ * @returns bigint nanoseconds, or undefined for permanent
+ */
+function parseDuration(input: string): bigint | undefined {
+  const s = input.trim().toLowerCase();
+  if (s === 'permanent' || s === 'perm') return undefined;
+
+  const NS_PER_SEC = 1_000_000_000n;
+  const match = s.match(/^(\d+)\s*([dhmy]?)$/);
+  if (!match) throw new Error(`Invalid duration format: "${input}". Use e.g. 30d, 24h, 1y, permanent`);
+
+  const num = BigInt(match[1]!);
+  const unit = match[2] || 's';
+
+  switch (unit) {
+    case 'h': return num * 3600n * NS_PER_SEC;
+    case 'd': return num * 86400n * NS_PER_SEC;
+    case 'm': return num * 30n * 86400n * NS_PER_SEC;
+    case 'y': return num * 365n * 86400n * NS_PER_SEC;
+    case 's': return num * NS_PER_SEC;
+    default: throw new Error(`Unknown duration unit: ${unit}`);
+  }
+}
+
+/**
+ * Format a nanosecond timestamp to a human-readable date string.
+ * Returns "permanent" for u64::MAX.
+ */
+function formatNsTimestamp(ns: bigint): string {
+  // u64::MAX = 18446744073709551615
+  if (ns >= 18446744073709551615n) return 'permanent';
+  const ms = Number(ns / 1_000_000n);
+  return new Date(ms).toISOString();
+}
+
+// ============================================================================
+// Kind5 Access Control Commands
+// ============================================================================
+
+/**
+ * grant: Authorize another user to decrypt your Kind5 encrypted posts.
+ *
+ * Options:
+ *   --grantee=<principal>   (required) Recipient's principal ID
+ *   --event-ids=<id1,id2>   (optional) Specific event IDs to authorize; empty = all Kind5 posts
+ *   --duration=<dur>        (optional) Duration: 30d, 1y, permanent (default: permanent)
+ *   --json                  Output in JSON format
+ */
+async function cmdGrant(session: Session): Promise<void> {
+  const args = session.args;
+  const granteePrincipal = args['grantee'] as string | undefined;
+  const eventIdsStr = args['event-ids'] as string | undefined;
+  const durationStr = args['duration'] as string | undefined;
+  const jsonOutput = !!args['json'];
+
+  if (!granteePrincipal) {
+    throw new Error('--grantee=<principal> is required');
+  }
+
+  // Validate grantee is a valid principal
+  let grantee: Principal;
+  try {
+    grantee = Principal.fromText(granteePrincipal);
+  } catch {
+    throw new Error(`Invalid grantee principal: "${granteePrincipal}"`);
+  }
+
+  // Parse event IDs (comma-separated, empty list = all Kind5 posts)
+  const eventIds: string[] = eventIdsStr
+    ? eventIdsStr.split(',').map(id => id.trim()).filter(Boolean)
+    : [];
+
+  // Parse duration (default: permanent)
+  const durationNs = durationStr ? parseDuration(durationStr) : undefined;
+  // Candid opt: [bigint] when present, [] when None (permanent)
+  const durationOpt: [] | [bigint] = durationNs !== undefined ? [durationNs] : [];
+
+  const actor = await session.getSignActor();
+
+  let result: { Ok: bigint } | { Err: string };
+  try {
+    result = await (actor as any).grant_kind5_access({
+      grantee,
+      event_ids: eventIds,
+      duration_ns: durationOpt,
+    });
+  } catch (e) {
+    throw canisterCallError(
+      `grant_kind5_access failed: ${e instanceof Error ? e.message : String(e)}`, e,
+    );
+  }
+
+  if ('Err' in result) {
+    throw new Error(`Grant failed: ${result.Err}`);
+  }
+
+  const grantId = result.Ok;
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      grant_id: grantId.toString(),
+      grantee: granteePrincipal,
+      event_ids: eventIds,
+      scope: eventIds.length === 0 ? 'all_kind5_posts' : 'specific_events',
+      duration: durationStr || 'permanent',
+    }));
+  } else {
+    console.log('Kind5 access granted successfully!');
+    console.log(`  Grant ID:  ${grantId}`);
+    console.log(`  Grantee:   ${granteePrincipal}`);
+    console.log(`  Scope:     ${eventIds.length === 0 ? 'All Kind5 posts' : `${eventIds.length} specific event(s)`}`);
+    console.log(`  Duration:  ${durationStr || 'permanent'}`);
+    if (eventIds.length > 0) {
+      console.log(`  Event IDs: ${eventIds.join(', ')}`);
+    }
+  }
+}
+
+/**
+ * revoke: Revoke an access grant by grant ID.
+ *
+ * Options:
+ *   --grant-id=<id>   (required) The grant ID to revoke
+ *   --json            Output in JSON format
+ */
+async function cmdRevoke(session: Session): Promise<void> {
+  const args = session.args;
+  const grantIdStr = args['grant-id'] as string | undefined;
+  const jsonOutput = !!args['json'];
+
+  if (!grantIdStr) {
+    throw new Error('--grant-id=<id> is required');
+  }
+
+  let grantId: bigint;
+  try {
+    grantId = BigInt(grantIdStr);
+  } catch {
+    throw new Error(`Invalid grant ID: "${grantIdStr}" (must be a number)`);
+  }
+
+  const actor = await session.getSignActor();
+
+  let result: { Ok: null } | { Err: string };
+  try {
+    result = await (actor as any).revoke_kind5_access(grantId);
+  } catch (e) {
+    throw canisterCallError(
+      `revoke_kind5_access failed: ${e instanceof Error ? e.message : String(e)}`, e,
+    );
+  }
+
+  if ('Err' in result) {
+    throw new Error(`Revoke failed: ${result.Err}`);
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ grant_id: grantIdStr, revoked: true }));
+  } else {
+    console.log(`Grant ${grantIdStr} revoked successfully.`);
+  }
+}
+
+/**
+ * grants-out: List all active grants issued by the caller (as grantor).
+ */
+async function cmdGrantsOut(session: Session): Promise<void> {
+  const jsonOutput = !!session.args['json'];
+  const actor = await session.getSignActor();
+
+  let grants: any[];
+  try {
+    grants = await (actor as any).get_kind5_grants_by_grantor();
+  } catch (e) {
+    throw canisterCallError(
+      `get_kind5_grants_by_grantor failed: ${e instanceof Error ? e.message : String(e)}`, e,
+    );
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify(formatGrantsForJson(grants)));
+  } else {
+    printGrants(grants, 'issued');
+  }
+}
+
+/**
+ * grants-in: List all active grants received by the caller (as grantee).
+ */
+async function cmdGrantsIn(session: Session): Promise<void> {
+  const jsonOutput = !!session.args['json'];
+  const actor = await session.getSignActor();
+
+  let grants: any[];
+  try {
+    grants = await (actor as any).get_kind5_grants_by_grantee();
+  } catch (e) {
+    throw canisterCallError(
+      `get_kind5_grants_by_grantee failed: ${e instanceof Error ? e.message : String(e)}`, e,
+    );
+  }
+
+  if (jsonOutput) {
+    console.log(JSON.stringify(formatGrantsForJson(grants)));
+  } else {
+    printGrants(grants, 'received');
+  }
+}
+
+/**
+ * Format grant records for JSON output.
+ * Converts bigint fields to strings for JSON serialization.
+ */
+function formatGrantsForJson(grants: any[]): object[] {
+  return grants.map(g => ({
+    grant_id: g.grant_id.toString(),
+    grantor: g.grantor.toText(),
+    grantee: g.grantee.toText(),
+    event_ids: g.event_ids,
+    scope: g.event_ids.length === 0 ? 'all_kind5_posts' : 'specific_events',
+    created_at: g.created_at.toString(),
+    expires_at: g.expires_at.toString(),
+    expires_at_human: formatNsTimestamp(g.expires_at),
+    status: 'Active' in g.status ? 'Active' : 'Revoked',
+  }));
+}
+
+/**
+ * Print grant records in human-readable table format.
+ * @param grants - Array of AccessGrant records from canister
+ * @param direction - "issued" (grants-out) or "received" (grants-in)
+ */
+function printGrants(grants: any[], direction: 'issued' | 'received'): void {
+  if (grants.length === 0) {
+    console.log(`No Kind5 access grants ${direction}.`);
+    return;
+  }
+
+  console.log(`Kind5 access grants ${direction} (${grants.length} total):`);
+  console.log('');
+  for (const g of grants) {
+    const scope = g.event_ids.length === 0
+      ? 'All Kind5 posts'
+      : `${g.event_ids.length} event(s)`;
+    const peer = direction === 'issued'
+      ? `Grantee: ${g.grantee.toText()}`
+      : `Grantor: ${g.grantor.toText()}`;
+
+    console.log(`  [Grant #${g.grant_id}]`);
+    console.log(`    ${peer}`);
+    console.log(`    Scope:      ${scope}`);
+    console.log(`    Expires:    ${formatNsTimestamp(g.expires_at)}`);
+    console.log(`    Created:    ${formatNsTimestamp(g.created_at)}`);
+    if (g.event_ids.length > 0 && g.event_ids.length <= 5) {
+      console.log(`    Event IDs:  ${g.event_ids.join(', ')}`);
+    } else if (g.event_ids.length > 5) {
+      console.log(`    Event IDs:  ${g.event_ids.slice(0, 5).join(', ')} ... (+${g.event_ids.length - 5} more)`);
+    }
+    console.log('');
+  }
 }

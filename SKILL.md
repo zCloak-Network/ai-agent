@@ -15,6 +15,7 @@ With this skill, an AI agent can:
 - **Bind** to a human owner via passkey authentication
 - **Delete** files with 2FA (passkey) verification
 - **Encrypt/Decrypt** files and data using ICP VetKey (IBE + AES-256-GCM daemon mode)
+- **Grant/Revoke** Kind5 decryption access to other users
 
 ## 1. Setup
 
@@ -390,7 +391,59 @@ zcloak-ai vetkey stop --key-name "skills"
 
 > Same `identity.pem` + same `key-name` = same AES-256 key every time. Backups are always recoverable.
 
-### 9.4 Agent Rules: Daemon Lifecycle
+### 9.4 Kind5 Access Control
+
+Grant or revoke decryption access to your Kind5 encrypted posts for other users. Once authorized, the grantee can use the standard `decrypt` command to decrypt the post.
+
+#### Grant Access
+
+Authorize a user to decrypt your Kind5 posts:
+
+```bash
+# Grant access to all your Kind5 posts (permanent)
+zcloak-ai vetkey grant --grantee <principal> --json
+
+# Grant access to specific posts only
+zcloak-ai vetkey grant --grantee <principal> --event-ids=EVENT_ID1,EVENT_ID2 --json
+
+# Grant with time limit (30 days)
+zcloak-ai vetkey grant --grantee <principal> --duration=30d --json
+
+# Grant with 1-year expiry for specific posts
+zcloak-ai vetkey grant --grantee <principal> --event-ids=EVENT_ID1 --duration=1y --json
+```
+
+Duration formats: `30d` (days), `24h` (hours), `6m` (months), `1y` (years), `permanent` (default).
+
+Output: `{"grant_id": "42", "grantee": "...", "scope": "all_kind5_posts", "duration": "permanent"}`
+
+#### Revoke Access
+
+```bash
+zcloak-ai vetkey revoke --grant-id 42 --json
+```
+
+#### List Grants
+
+```bash
+# Grants you issued (who can decrypt your posts)
+zcloak-ai vetkey grants-out --json
+
+# Grants you received (whose posts you can decrypt)
+zcloak-ai vetkey grants-in --json
+```
+
+#### Grantee Decrypts a Post
+
+Once authorized, the grantee decrypts using the standard `decrypt` command — no extra flags needed:
+
+```bash
+zcloak-ai vetkey decrypt --event-id "EVENT_ID" --json
+```
+
+The canister automatically verifies the caller's authorization via AccessGrant.
+
+### 9.5 Agent Rules: Daemon Lifecycle
 
 > **CRITICAL — Read before using daemon mode.**
 
@@ -403,7 +456,7 @@ zcloak-ai vetkey stop --key-name "skills"
 
 **In short: Start once → connect to socket → send many requests → never shutdown unless told to.**
 
-### 9.5 Background Daemon Startup
+### 9.6 Background Daemon Startup
 
 To keep the daemon alive in the background:
 
@@ -416,7 +469,7 @@ zcloak-ai vetkey status --key-name "default"
 
 Without `nohup` or a process manager, the daemon will be killed by SIGHUP when the terminal session ends.
 
-### 9.6 Key Properties
+### 9.7 Key Properties
 
 - Same `derivation_id` always derives the same key — previously encrypted files can always be decrypted
 - Key never leaves process memory — not exposed via any API

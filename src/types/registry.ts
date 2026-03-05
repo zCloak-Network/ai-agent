@@ -3,7 +3,7 @@
  *
  * Run `npm run generate-types` to regenerate this file.
  * Source: registryIdlFactory in src/idl.ts
- * Generated: 2026-03-04T09:32:07.320Z
+ * Generated: 2026-03-05T04:11:08.564Z
  *
  * These types are derived from the Candid IDL definitions and correspond to
  * the canister's runtime interface. Edit idl.ts to change type definitions.

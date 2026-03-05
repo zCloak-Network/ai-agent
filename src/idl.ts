@@ -73,7 +73,31 @@ export function buildSignTypes(I: typeof IDL) {
     ibe_identity: I.Text,            // IBE identity string
   });
 
-  return { SignEvent, SignParm, DecryptionPackage };
+  /** AccessStatus variant — Kind5 access grant status */
+  const AccessStatus = I.Variant({
+    Active: I.Null,
+    Revoked: I.Null,
+  });
+
+  /** AccessGrant record — Kind5 decryption authorization record */
+  const AccessGrant = I.Record({
+    grant_id: I.Nat64,                 // Auto-incrementing grant ID
+    grantor: I.Principal,              // Grant issuer (post owner)
+    grantee: I.Principal,              // Authorized recipient
+    event_ids: I.Vec(I.Text),          // Authorized post event_ids (empty = all Kind5 posts)
+    created_at: I.Nat64,               // Creation timestamp (nanoseconds)
+    expires_at: I.Nat64,               // Expiration timestamp (nanoseconds), u64::MAX = permanent
+    status: AccessStatus,              // Grant status
+  });
+
+  /** GrantKind5AccessArgs record — arguments for granting Kind5 access */
+  const GrantKind5AccessArgs = I.Record({
+    grantee: I.Principal,              // Authorized recipient
+    event_ids: I.Vec(I.Text),          // Post event_ids to authorize (empty = all Kind5 posts)
+    duration_ns: I.Opt(I.Nat64),       // Duration in nanoseconds, None = permanent
+  });
+
+  return { SignEvent, SignParm, DecryptionPackage, AccessStatus, AccessGrant, GrantKind5AccessArgs };
 }
 
 /**
@@ -87,7 +111,7 @@ export function buildSignService(
   I: typeof IDL,
   types: ReturnType<typeof buildSignTypes>,
 ) {
-  const { SignEvent, SignParm, DecryptionPackage } = types;
+  const { SignEvent, SignParm, DecryptionPackage, AccessGrant, GrantKind5AccessArgs } = types;
 
   return I.Service({
     // ===== Signing operations (update call, requires identity) =====
@@ -174,6 +198,36 @@ export function buildSignService(
       [I.Text],
       [I.Opt(SignEvent)],
       ['query']
+    ),
+
+    // ===== Kind5 access control operations =====
+
+    // Grant other users decryption access to your Kind5 posts
+    grant_kind5_access: I.Func(
+      [GrantKind5AccessArgs],
+      [I.Variant({ Ok: I.Nat64, Err: I.Text })],
+      [],
+    ),
+
+    // Revoke an access grant by grant_id
+    revoke_kind5_access: I.Func(
+      [I.Nat64],
+      [I.Variant({ Ok: I.Null, Err: I.Text })],
+      [],
+    ),
+
+    // Query grants issued by the caller (as grantor)
+    get_kind5_grants_by_grantor: I.Func(
+      [],
+      [I.Vec(AccessGrant)],
+      ['query'],
+    ),
+
+    // Query grants received by the caller (as grantee)
+    get_kind5_grants_by_grantee: I.Func(
+      [],
+      [I.Vec(AccessGrant)],
+      ['query'],
     ),
 
     // Connection test

@@ -3,7 +3,7 @@
  *
  * Run `npm run generate-types` to regenerate this file.
  * Source: signIdlFactory in src/idl.ts
- * Generated: 2026-03-04T09:32:07.319Z
+ * Generated: 2026-03-05T04:11:08.563Z
  *
  * These types are derived from the Candid IDL definitions and correspond to
  * the canister's runtime interface. Edit idl.ts to change type definitions.
@@ -92,6 +92,12 @@ export type SignParm =
 /** Return type for canister method */
 export type AgentSignResult = { Ok: SignEvent } | { Err: string };
 
+/** Return type for canister method */
+export type GrantKind5AccessResult = { Ok: bigint } | { Err: string };
+
+/** Return type for canister method */
+export type RevokeKind5AccessResult = { Ok: null } | { Err: string };
+
 /** Backward-compatible alias for agent_sign return type */
 export type SignResult = AgentSignResult;
 
@@ -110,10 +116,34 @@ export interface SignService {
   ciphertext: number[];
   ibe_identity: string;
 }>;
+  get_kind5_grants_by_grantee: ActorMethod<[], ({
+  event_ids: string[];
+  status: { Active: null } | { Revoked: null };
+  created_at: bigint;
+  grantee: Principal;
+  grantor: Principal;
+  expires_at: bigint;
+  grant_id: bigint;
+})[]>;
+  get_kind5_grants_by_grantor: ActorMethod<[], ({
+  event_ids: string[];
+  status: { Active: null } | { Revoked: null };
+  created_at: bigint;
+  grantee: Principal;
+  grantor: Principal;
+  expires_at: bigint;
+  grant_id: bigint;
+})[]>;
   get_sign_event_by_id: ActorMethod<[string], CandidOpt<SignEvent>>;
   get_user_latest_sign_event_id: ActorMethod<[Principal], string>;
+  grant_kind5_access: ActorMethod<[{
+  event_ids: string[];
+  grantee: Principal;
+  duration_ns: CandidOpt<bigint>;
+}], GrantKind5AccessResult>;
   greet: ActorMethod<[string], string>;
   mcp_sign: ActorMethod<[Principal, SignParm], SignEvent>;
+  revoke_kind5_access: ActorMethod<[bigint], RevokeKind5AccessResult>;
   sign: ActorMethod<[SignParm], SignEvent>;
   verify_file_hash: ActorMethod<[string], SignEvent[]>;
   verify_message: ActorMethod<[string], SignEvent[]>;
