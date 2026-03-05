@@ -59,4 +59,9 @@ describe('Session URL helpers', () => {
     const session = new Session(['node', 'script.js']);
     expect(session.getTwoFAUrl()).toBe(config.twofa_url);
   });
+
+  it('getSettingUrl returns correct URL', () => {
+    const session = new Session(['node', 'script.js']);
+    expect(session.getSettingUrl()).toBe(config.setting_url);
+  });
 });

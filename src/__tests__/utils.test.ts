@@ -26,6 +26,7 @@ import {
   formatOptText,
   buildEventUrl,
 } from '../utils.js';
+import config from '../config.js';
 
 // ========== Temp directory helpers ==========
 
@@ -403,7 +404,7 @@ describe('formatSignEvents', () => {
 describe('buildEventUrl', () => {
   it('builds a full event URL from event ID', () => {
     const url = buildEventUrl('abc123def456');
-    expect(url).toBe('https://social.zcloak.xyz/post/abc123def456');
+    expect(url).toBe(`${config.event_url}abc123def456`);
   });
 });
 
@@ -418,7 +419,7 @@ describe('formatSignResult', () => {
     expect(result).toContain('variant { Ok =');
     expect(result).toContain('id = "abc"');
     // Should include the view URL
-    expect(result).toContain('View: https://social.zcloak.xyz/post/abc');
+    expect(result).toContain(`View: ${config.event_url}abc`);
   });
 
   it('formats Err variant without URL', () => {

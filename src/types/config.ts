@@ -26,4 +26,6 @@ export interface AppConfig {
   twofa_url: string;
   /** Event view page URL prefix (appended with event ID to form the full URL) */
   event_url: string;
+  /** User setting page URL (for passkey management) */
+  setting_url: string;
 }

@@ -23,6 +23,8 @@ const config: AppConfig = {
   twofa_url: 'https://id.zcloak.ai/agent/2fa',
   // Event view page URL prefix (append event ID to form the full URL)
   event_url: 'https://social.zcloak.ai/post/',
+  // User setting page URL (for passkey management)
+  setting_url: 'https://id.zcloak.ai/setting',
 };
 
 export default config;

@@ -79,7 +79,7 @@ async function cmdCheckPasskey(session: Session, userPrincipal: string | undefin
     console.log('Passkey registered: no');
     console.log('');
     console.log('This principal was created via OAuth and has no passkey yet.');
-    console.log('Please go to https://id.zcloak.xyz/setting and bind a passkey first.');
+    console.log(`Please go to ${session.getSettingUrl()} and bind a passkey first.`);
   }
 }
 
@@ -97,7 +97,7 @@ async function cmdPrepare(session: Session, userPrincipal: string | undefined): 
   if (!passkeyOk) {
     console.error('Error: target principal has no passkey registered.');
     console.error('This principal was created via OAuth and has no passkey yet.');
-    console.error('Please go to https://id.zcloak.xyz/setting and bind a passkey for this user first.');
+    console.error(`Please go to ${session.getSettingUrl()} and bind a passkey for this user first.`);
     process.exit(1);
   }
   console.error('Pre-check passed: passkey found.');

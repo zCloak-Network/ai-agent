@@ -12,6 +12,7 @@ import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
 import { run } from '../verify.js';
+import config from '../config.js';
 import type { Session } from '../session.js';
 
 // Mock process.exit to prevent test runner from exiting
@@ -55,7 +56,7 @@ function mockSession(args: string[]): Session {
     args: { _args: args },
     getAnonymousSignActor: vi.fn().mockResolvedValue(signActor),
     getAnonymousRegistryActor: vi.fn().mockResolvedValue(registryActor),
-    getProfileUrl: vi.fn().mockReturnValue('https://id.zcloak.xyz/profile/'),
+    getProfileUrl: vi.fn().mockReturnValue(config.profile_url),
   } as unknown as Session;
 }
 

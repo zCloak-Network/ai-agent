@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { run } from '../bind.js';
+import config from '../config.js';
 import type { Session } from '../session.js';
 
 // Mock process.exit to prevent test runner from exiting
@@ -45,7 +46,8 @@ function mockSession(args: string[], registryActor: any): Session {
     args: { _args: args },
     getAnonymousRegistryActor: vi.fn().mockResolvedValue(registryActor),
     getRegistryActor: vi.fn().mockResolvedValue(registryActor),
-    getBindUrl: vi.fn().mockReturnValue('https://id.zcloak.xyz/agent/bind'),
+    getBindUrl: vi.fn().mockReturnValue(config.bind_url),
+    getSettingUrl: vi.fn().mockReturnValue(config.setting_url),
   } as unknown as Session;
 }
 
@@ -115,7 +117,7 @@ describe('bind prepare command', () => {
 
     expect(actor.agent_prepare_bond).toHaveBeenCalledWith('user-principal');
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('=== Binding Authentication URL ==='));
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('https://id.zcloak.xyz/agent/bind?auth_content='));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining(`${config.bind_url}?auth_content=`));
   });
 
   it('exits with error when passkey pre-check fails', async () => {

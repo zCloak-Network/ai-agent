@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { run } from '../delete.js';
+import config from '../config.js';
 import type { Session } from '../session.js';
 
 // Mock process.exit to prevent test runner from exiting
@@ -53,7 +54,7 @@ function mockSession(args: string[], actor?: any): Session {
     args: { _args: args },
     getRegistryActor: vi.fn().mockResolvedValue(registryActor),
     getAnonymousRegistryActor: vi.fn().mockResolvedValue(registryActor),
-    getTwoFAUrl: vi.fn().mockReturnValue('https://id.zcloak.xyz/agent/2fa'),
+    getTwoFAUrl: vi.fn().mockReturnValue(config.twofa_url),
   } as unknown as Session;
 }
 
@@ -90,7 +91,7 @@ describe('delete prepare command', () => {
 
     // Should output URL
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('=== 2FA Authentication URL ==='));
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('https://id.zcloak.xyz/agent/2fa?auth_content='));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining(`${config.twofa_url}?auth_content=`));
   });
 
   it('exits with error when file path is missing', async () => {

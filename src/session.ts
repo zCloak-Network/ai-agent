@@ -220,4 +220,9 @@ export class Session {
   getTwoFAUrl(): string {
     return config.twofa_url;
   }
+
+  /** Get the user setting page URL */
+  getSettingUrl(): string {
+    return config.setting_url;
+  }
 }
