@@ -56,9 +56,20 @@ export function computePow(base: string, zeros?: number): PowResult {
 // ========== Command Line Arguments ==========
 
 /**
+ * Known boolean-only flags that never take a value argument.
+ * Used by parseArgs to avoid consuming the next positional arg as a value.
+ */
+const BOOLEAN_FLAGS = new Set(['json', 'stdio', 'help', 'version']);
+
+/**
  * Parse command line arguments into a structured object.
- * Supports both --key=value and --flag formats.
+ * Supports --key=value, --key value (space-separated), and --flag formats.
  * Positional arguments (not starting with --) are placed in _args array in order.
+ *
+ * Space-separated format (--key value):
+ *   When a --key flag has no '=' and is NOT in BOOLEAN_FLAGS, the parser
+ *   looks ahead at the next argument. If the next arg doesn't start with '--',
+ *   it is consumed as the value. Otherwise the flag is treated as boolean true.
  *
  * When called with an explicit argv array, uses that instead of process.argv.
  * The first two elements (node path and script path) are always skipped,
@@ -71,13 +82,23 @@ export function parseArgs(argv?: string[]): ParsedArgs {
   // Skip node and script path (first 2 elements)
   const effectiveArgv = (argv ?? process.argv).slice(2);
 
-  for (const arg of effectiveArgv) {
+  for (let i = 0; i < effectiveArgv.length; i++) {
+    const arg = effectiveArgv[i]!;
     if (arg.startsWith('--')) {
       const eqIdx = arg.indexOf('=');
       if (eqIdx > 0) {
+        // --key=value format
         result[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
       } else {
-        result[arg.slice(2)] = true;
+        const key = arg.slice(2);
+        // For non-boolean flags, look ahead for a space-separated value
+        const nextArg = effectiveArgv[i + 1];
+        if (!BOOLEAN_FLAGS.has(key) && nextArg !== undefined && !nextArg.startsWith('--')) {
+          result[key] = nextArg;
+          i++; // skip the consumed value
+        } else {
+          result[key] = true;
+        }
       }
     } else {
       result._args.push(arg);

@@ -86,6 +86,42 @@ describe('parseArgs', () => {
     expect(result).toBeDefined();
     expect(result._args).toBeDefined();
   });
+
+  it('parses --key value (space-separated) for non-boolean flags', () => {
+    const result = parseArgs(['node', 'script.js', 'decrypt', '--event-id', 'abc123']);
+    expect(result['event-id']).toBe('abc123');
+    expect(result._args).toEqual(['decrypt']);
+  });
+
+  it('treats known boolean flags as true even with following positional arg', () => {
+    const result = parseArgs(['node', 'script.js', '--json', 'post']);
+    expect(result.json).toBe(true);
+    expect(result._args).toEqual(['post']);
+  });
+
+  it('handles mixed --key=value, --key value, --flag, and positional args', () => {
+    const result = parseArgs([
+      'node', 'script.js', 'decrypt',
+      '--event-id', 'abc123',
+      '--output', '/tmp/out.txt',
+      '--json',
+    ]);
+    expect(result['event-id']).toBe('abc123');
+    expect(result.output).toBe('/tmp/out.txt');
+    expect(result.json).toBe(true);
+    expect(result._args).toEqual(['decrypt']);
+  });
+
+  it('treats --key without next arg as boolean true', () => {
+    const result = parseArgs(['node', 'script.js', '--verbose']);
+    expect(result.verbose).toBe(true);
+  });
+
+  it('treats --key followed by another --flag as boolean true', () => {
+    const result = parseArgs(['node', 'script.js', '--force', '--verbose']);
+    expect(result.force).toBe(true);
+    expect(result.verbose).toBe(true);
+  });
 });
 
 // ========== parseTags ==========

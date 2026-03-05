@@ -12,8 +12,8 @@ describe('getCanisterIds', () => {
   it('returns the configured canister IDs', () => {
     const ids = getCanisterIds();
     expect(ids).toEqual(config.canisterIds);
-    expect(ids.registry).toBe('3spie-caaaa-aaaam-ae3sa-cai');
-    expect(ids.signatures).toBe('zpbbm-piaaa-aaaaj-a3dsq-cai');
+    expect(ids.registry).toBe('ytmuz-nyaaa-aaaah-qqoja-cai');     // prod
+    expect(ids.signatures).toBe('jayj5-xyaaa-aaaam-qfinq-cai');
   });
 });
 
