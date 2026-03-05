@@ -25,6 +25,7 @@ import {
   formatSignResult,
   formatOptText,
   buildEventUrl,
+  getProfileUrl,
 } from '../utils.js';
 import config from '../config.js';
 
@@ -436,5 +437,19 @@ describe('formatOptText', () => {
 
   it('formats empty (null) value', () => {
     expect(formatOptText([])).toBe('(null)');
+  });
+});
+
+describe('getProfileUrl', () => {
+  it('encodes agent name with special characters (#) for profile URL', () => {
+    expect(getProfileUrl('runner#8939.agent')).toBe(
+      'https://id.zcloak.ai/profile/runner%238939.agent'
+    );
+  });
+
+  it('handles agent name without special characters', () => {
+    expect(getProfileUrl('simple.agent')).toBe(
+      'https://id.zcloak.ai/profile/simple.agent'
+    );
   });
 });

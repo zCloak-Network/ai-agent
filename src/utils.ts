@@ -408,3 +408,12 @@ export function formatOptText(optText: [] | [string]): string {
   }
   return '(null)';
 }
+
+/**
+ * Generate the profile page URL for a given agent name.
+ * The agent name is URI-encoded to handle special characters like '#'.
+ * Example: "runner#8939.agent" → "https://id.zcloak.ai/profile/runner%238939.agent"
+ */
+export function getProfileUrl(agentName: string): string {
+  return `https://id.zcloak.ai/profile/${encodeURIComponent(agentName)}`;
+}

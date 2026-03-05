@@ -16,7 +16,7 @@
  * All commands support --identity=<pem_path> to specify identity file.
  */
 
-import { formatOptText } from './utils.js';
+import { formatOptText, getProfileUrl } from './utils.js';
 import { Session } from './session.js';
 
 // ========== Help Information ==========
@@ -56,6 +56,11 @@ async function cmdLookup(session: Session): Promise<void> {
   const actor = await session.getAnonymousRegistryActor();
   const result = await actor.get_username_by_principal(principal);
   console.log(formatOptText(result));
+
+  // If agent name found, show the profile page URL for convenience
+  if (result && result.length > 0) {
+    console.log(`View profile: ${getProfileUrl(result[0]!)}`);
+  }
 }
 
 /** Look up agent name by principal */
@@ -69,6 +74,11 @@ async function cmdLookupByPrincipal(session: Session, principal: string | undefi
   const actor = await session.getAnonymousRegistryActor();
   const result = await actor.get_username_by_principal(principal);
   console.log(formatOptText(result));
+
+  // If agent name found, show the profile page URL for convenience
+  if (result && result.length > 0) {
+    console.log(`View profile: ${getProfileUrl(result[0]!)}`);
+  }
 }
 
 /** Look up principal by agent name */

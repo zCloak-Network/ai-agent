@@ -83,6 +83,8 @@ describe('register lookup command', () => {
 
     expect(actor.get_username_by_principal).toHaveBeenCalledWith('abc-def-principal');
     expect(mockLog).toHaveBeenCalledWith('(opt "runner#8939.agent")');
+    // Should also show the profile URL when agent name is found
+    expect(mockLog).toHaveBeenCalledWith('View profile: https://id.zcloak.ai/profile/runner%238939.agent');
   });
 
   it('outputs (null) when no agent name found', async () => {
