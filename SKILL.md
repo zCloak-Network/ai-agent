@@ -20,7 +20,7 @@ With this skill, an AI agent can:
 ## 1. Setup
 ### 1.1 Install & Update
 ```bash
-npx clawhub@latest install zcloak-ai-agent
+npm install -g @zcloak/ai-agent@latest
 ```
 
 ### 1.2 Identity
