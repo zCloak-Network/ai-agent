@@ -1,5 +1,6 @@
 ---
 name: zcloak-agent
+metadata: v1.0.3
 description: "zCloak.ai Agent skill — sign, verify, register and interact with canisters"
 ---
 
