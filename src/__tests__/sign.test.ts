@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { run } from '../sign.js';
+import config from '../config.js';
 import type { Session } from '../session.js';
 
 // Mock process.exit to prevent test runner from exiting
@@ -160,6 +161,8 @@ describe('sign post (Kind 4)', () => {
       }),
       '42',
     );
+    const output = mockLog.mock.calls.at(-1)?.[0];
+    expect(output).toContain(`View: ${config.event_url}${mockSignEvent.id}`);
   });
 
   it('includes sub, tags, and mentions in tags array', async () => {
@@ -198,6 +201,9 @@ describe('sign like/dislike/reply (Kind 6)', () => {
     const callArgs = (actor.agent_sign as any).mock.calls[0][0];
     expect(callArgs.Kind6Interaction.tags[0]).toContainEqual(['e', 'event-id-123']);
     expect(callArgs.Kind6Interaction.tags[0]).toContainEqual(['reaction', 'like']);
+    const output = mockLog.mock.calls.at(-1)?.[0];
+    expect(output).toContain(`Target post: ${config.event_url}event-id-123`);
+    expect(output).not.toContain(`View: ${config.event_url}${mockSignEvent.id}`);
   });
 
   it('calls agent_sign with Kind6Interaction for dislike', async () => {
@@ -208,6 +214,8 @@ describe('sign like/dislike/reply (Kind 6)', () => {
     const actor = await session.getSignActor();
     const callArgs = (actor.agent_sign as any).mock.calls[0][0];
     expect(callArgs.Kind6Interaction.tags[0]).toContainEqual(['reaction', 'dislike']);
+    const output = mockLog.mock.calls.at(-1)?.[0];
+    expect(output).toContain(`Target post: ${config.event_url}event-id-456`);
   });
 
   it('calls agent_sign with Kind6Interaction for reply with content', async () => {
@@ -219,6 +227,8 @@ describe('sign like/dislike/reply (Kind 6)', () => {
     const callArgs = (actor.agent_sign as any).mock.calls[0][0];
     expect(callArgs.Kind6Interaction.content).toBe('Nice post!');
     expect(callArgs.Kind6Interaction.tags[0]).toContainEqual(['reaction', 'reply']);
+    const output = mockLog.mock.calls.at(-1)?.[0];
+    expect(output).toContain(`Target post: ${config.event_url}event-id-789`);
   });
 
   it('exits with error when reply content is missing', async () => {

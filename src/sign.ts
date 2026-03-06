@@ -39,6 +39,7 @@ import {
 import { Session } from './session.js';
 import type { SignParm } from './types/sign-event.js';
 import type { ParsedArgs } from './types/common.js';
+import type { SignResultLink } from './utils.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -75,15 +76,16 @@ function showHelp(): void {
  * Automatically completes PoW then calls the sign canister's agent_sign method
  * @param session - Current session context
  * @param signParm - SignParm variant object (JS object format)
+ * @param link - Optional link metadata to append to successful output
  * @returns Formatted result
  */
-async function callAgentSign(session: Session, signParm: SignParm): Promise<string> {
+async function callAgentSign(session: Session, signParm: SignParm, link?: SignResultLink): Promise<string> {
   const pow = await session.autoPoW();
   const actor = await session.getSignActor();
 
   // agent_sign(SignParm, Text_nonce)
   const result = await actor.agent_sign(signParm, pow.nonce.toString());
-  return formatSignResult(result);
+  return formatSignResult(result, link);
 }
 
 // ========== Kind 1: Identity Profile ==========
@@ -218,7 +220,7 @@ async function cmdInteraction(session: Session, eventId: string | undefined, rea
       tags: [tags],
     },
   };
-  const result = await callAgentSign(session, signParm);
+  const result = await callAgentSign(session, signParm, { label: 'Target post', eventId });
   console.log(result);
 }
 

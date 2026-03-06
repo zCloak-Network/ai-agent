@@ -446,7 +446,7 @@ describe('buildEventUrl', () => {
 });
 
 describe('formatSignResult', () => {
-  it('formats Ok variant with event view URL', () => {
+  it('formats Ok variant with default event view URL', () => {
     const event = {
       id: 'abc', kind: 4, ai_id: 'p', created_at: BigInt(0),
       content_hash: 'h', counter: [] as [] | [number],
@@ -457,6 +457,19 @@ describe('formatSignResult', () => {
     expect(result).toContain('id = "abc"');
     // Should include the view URL
     expect(result).toContain(`View: ${config.event_url}abc`);
+  });
+
+  it('formats Ok variant with a caller-provided target post link', () => {
+    const event = {
+      id: 'reply-evt', kind: 6, ai_id: 'p', created_at: BigInt(0),
+      content_hash: 'h', counter: [] as [] | [number],
+      content: [] as [] | [string], tags: [] as [] | [string[][]],
+    };
+    const result = formatSignResult({ Ok: event }, { label: 'Target post', eventId: 'post-evt' });
+    expect(result).toContain('variant { Ok =');
+    expect(result).toContain('id = "reply-evt"');
+    expect(result).toContain(`Target post: ${config.event_url}post-evt`);
+    expect(result).not.toContain(`View: ${config.event_url}reply-evt`);
   });
 
   it('formats Err variant without URL', () => {

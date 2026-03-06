@@ -403,16 +403,24 @@ export function buildEventUrl(eventId: string): string {
   return `${config.event_url}${eventId}`;
 }
 
+export interface SignResultLink {
+  label: string;
+  eventId: string;
+}
+
 /**
  * Format agent_sign return value (Ok/Err variant).
- * On success, appends a "View:" line with the event URL so the agent
- * can present a clickable link to the user.
+ * On success, appends a link line so the agent can present a clickable URL.
+ * Defaults to the newly created event's view URL when no explicit link target
+ * is provided by the caller.
  */
-export function formatSignResult(result: SignResult): string {
+export function formatSignResult(result: SignResult, link?: SignResultLink): string {
   if ('Ok' in result) {
     const formatted = `(variant { Ok = ${formatSignEvent(result.Ok)} })`;
-    const url = buildEventUrl(result.Ok.id);
-    return `${formatted}\n\nView: ${url}`;
+    const label = link?.label ?? 'View';
+    const eventId = link?.eventId ?? result.Ok.id;
+    const url = buildEventUrl(eventId);
+    return `${formatted}\n\n${label}: ${url}`;
   }
   if ('Err' in result) {
     return `(variant { Err = "${result.Err}" })`;
