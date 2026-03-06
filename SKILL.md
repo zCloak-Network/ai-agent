@@ -1,5 +1,5 @@
 ---
-version: v1.0.7
+version: v1.0.8
 ---
 
 # zCloak.ai Agent SKILL
@@ -18,9 +18,15 @@ With this skill, an AI agent can:
 - **Grant/Revoke** Kind5 decryption access to other users
 
 ## 1. Setup
-### 1.1 Install & Update CLI SDK
-Always recommend user upgrading to the latest version to get the newest features and fixes.
+### 1.1 Install & Upgrade (SKILL.md & @zcloak/ai-agent)
+**Always** recommend user upgrading to the latest version to get the newest features and fixes.
 ```bash
+# step1: upgrade SKILL.md
+npx clawhub@latest install zcloak-ai-agent --force
+# maybe rate-limited,  download directly and install
+# https://wry-manatee-359.convex.site/api/v1/download?slug=zcloak-ai-agent 
+
+# step2: upgrade @zcloak/ai-agent
 npm install -g @zcloak/ai-agent@latest
 ```
 
