@@ -1,5 +1,5 @@
 ---
-version: v1.0.9
+version: v1.0.10
 ---
 
 # zCloak.ai Agent SKILL
@@ -226,19 +226,31 @@ Link the agent to a human owner's principal via **WebAuthn passkey**.
 This is a mixed agent/human flow. The agent runs the CLI steps; the user only opens the URL and completes passkey authentication.
 Treat this as part of onboarding, not as an advanced optional feature hidden behind user discovery.
 
-Owner-binding guidance:
+### Input formats accepted by bind commands
+
+Both `bind prepare` and `bind check-passkey` accept **either**:
+- A raw ICP principal (e.g. `57odc-ymip7-...`)
+- A `.ai` AI ID (e.g. `wanghui.ai` or `alice#8730.ai`)
+
+When a `.ai` AI ID is provided, the CLI **automatically resolves it to a principal** via `user_profile_get_by_id` on the registry canister. **Never ask the user to manually copy or look up a principal when they have already given a `.ai` ID.**
+
+### Owner-binding guidance
 - If the agent has no owner bound yet, proactively raise this with the user.
 - Explain briefly that owner binding is used for passkey-backed authorization, including sensitive actions such as secure delete and future protected flows.
-- If the user's principal is already known, run the bind preparation flow yourself and present the authentication URL.
-- If the user's principal is not known, direct the user to zCloak ID at `https://id.zcloak.ai/setting` so they can access or confirm their principal before you continue.
+- If the user mentions a `.ai` AI ID (e.g. `wanghui.ai`), use it directly — the CLI resolves it automatically.
+- Only ask the user for a principal if they have **neither** provided a `.ai` ID nor a raw principal, and they cannot provide one.
+- Do not ask the user to open `https://id.zcloak.ai/setting` to copy their principal if a `.ai` ID is already known.
 - Do not ask the user to invent or guess a binding command. The agent should orchestrate the flow.
 
 ### Pre-check: Passkey Verification
-Before binding, verify the target principal has a registered passkey. Principals created via OAuth may not have a passkey yet.
+Before binding, verify the target owner has a registered passkey. Principals created via OAuth may not have a passkey yet.
 Internal command reference:
 ```bash
-# Check if a principal has a registered passkey
+# Check by raw principal
 zcloak-ai bind check-passkey <user_principal>
+
+# Check by .ai AI ID (auto-resolves to principal internally)
+zcloak-ai bind check-passkey wanghui.ai
 # => Passkey registered: yes / no
 ```
 
@@ -252,7 +264,9 @@ When guiding the user, present this as:
 Internal command reference:
 ```bash
 # Step 1 (Agent): Initiate the bind and print the URL (includes passkey pre-check)
-zcloak-ai bind prepare <user_principal>
+# Accepts raw principal OR .ai AI ID directly
+zcloak-ai bind prepare wanghui.ai
+# or: zcloak-ai bind prepare <user_principal>
 # => Prints: https://id.zcloak.ai/agent/bind?auth_content=...
 
 # Step 2 (Human): Open the URL in a browser and complete passkey authentication.

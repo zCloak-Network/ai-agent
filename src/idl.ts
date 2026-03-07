@@ -252,6 +252,25 @@ export const signIdlFactory: IDL.InterfaceFactory = () => {
  * @param I - The IDL module
  */
 export function buildRegistryTypes(I: typeof IDL) {
+  /** Domain variant — namespace for ID resolution */
+  const Domain = I.Variant({
+    AI: I.Null,
+    ORG: I.Null,
+    AGENT: I.Null,
+  });
+
+  /**
+   * ID record — structured identifier for user_profile_get_by_id
+   *   id      : base name (e.g. "alice", "runner#8939")
+   *   index   : optional numeric discriminator (e.g. 8939 from "alice#8939.ai"); null for vanity IDs
+   *   domain  : optional namespace (AI | ORG | AGENT); null defaults to AI
+   */
+  const ID = I.Record({
+    id: I.Text,
+    index: I.Opt(I.Nat64),
+    domain: I.Opt(Domain),
+  });
+
   /** Position record — position information in the registry */
   const Position = I.Record({
     is_human: I.Bool,
@@ -260,15 +279,23 @@ export function buildRegistryTypes(I: typeof IDL) {
 
   /** AI profile record */
   const AiProfile = I.Record({
+    ai_name: I.Opt(ID),
+    default_name: I.Opt(ID),
+    is_free: I.Bool,
+    valid_time: I.Opt(I.Nat64),
+    bio: I.Opt(I.Text),
     position: I.Opt(Position),
   });
 
   /** User profile record */
   const UserProfile = I.Record({
     username: I.Text,
-    ai_profile: I.Opt(AiProfile),
+    create_time: I.Nat64,
+    modify_time: I.Nat64,
+    passkey_name: I.Vec(I.Text),
+    display_name: I.Text,
     principal_id: I.Opt(I.Text),
-    passkey_name: I.Vec(I.Text),  // Passkey names registered by the user
+    ai_profile: I.Opt(AiProfile),
   });
 
   /** Registration success result record */
@@ -286,7 +313,7 @@ export function buildRegistryTypes(I: typeof IDL) {
     confirm_timestamp: I.Opt(I.Nat64),    // When the 2FA was confirmed (null if pending)
   });
 
-  return { Position, AiProfile, UserProfile, RegisterResult, TwoFARecord };
+  return { Domain, ID, Position, AiProfile, UserProfile, RegisterResult, TwoFARecord };
 }
 
 /**
@@ -300,7 +327,7 @@ export function buildRegistryService(
   I: typeof IDL,
   types: ReturnType<typeof buildRegistryTypes>,
 ) {
-  const { UserProfile, RegisterResult, TwoFARecord } = types;
+  const { UserProfile, RegisterResult, TwoFARecord, ID } = types;
 
   return I.Service({
     // ===== Query operations (query) =====
@@ -319,9 +346,16 @@ export function buildRegistryService(
       ['query']
     ),
 
-    // Get UserProfile by username
+    // Get UserProfile by username (legacy)
     user_profile_get: I.Func(
       [I.Text],
+      [I.Opt(UserProfile)],
+      ['query']
+    ),
+
+    // Get UserProfile by structured ID (supports .ai vanity and indexed names)
+    user_profile_get_by_id: I.Func(
+      [ID],
       [I.Opt(UserProfile)],
       ['query']
     ),

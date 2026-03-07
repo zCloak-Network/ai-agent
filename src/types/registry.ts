@@ -3,7 +3,7 @@
  *
  * Run `npm run generate-types` to regenerate this file.
  * Source: registryIdlFactory in src/idl.ts
- * Generated: 2026-03-05T08:10:06.889Z
+ * Generated: 2026-03-07T06:43:30.564Z
  *
  * These types are derived from the Candid IDL definitions and correspond to
  * the canister's runtime interface. Edit idl.ts to change type definitions.
@@ -21,14 +21,30 @@ export interface Position {
 
 /** AI profile record */
 export interface AiProfile {
+  is_free: boolean;
+  bio: CandidOpt<string>;
+  default_name: CandidOpt<{
+  id: string;
+  domain: CandidOpt<{ AI: null } | { ORG: null } | { AGENT: null }>;
+  index: CandidOpt<bigint>;
+}>;
+  ai_name: CandidOpt<{
+  id: string;
+  domain: CandidOpt<{ AI: null } | { ORG: null } | { AGENT: null }>;
+  index: CandidOpt<bigint>;
+}>;
+  valid_time: CandidOpt<bigint>;
   position: CandidOpt<Position>;
 }
 
 /** User profile record */
 export interface UserProfile {
+  modify_time: bigint;
   username: string;
   passkey_name: string[];
+  display_name: string;
   ai_profile: CandidOpt<AiProfile>;
+  create_time: bigint;
   principal_id: CandidOpt<string>;
 }
 
@@ -65,5 +81,10 @@ export interface RegistryService {
   query_2fa_result_by_challenge: ActorMethod<[string], CandidOpt<TwoFARecord>>;
   register_agent: ActorMethod<[string], RegisterAgentResult>;
   user_profile_get: ActorMethod<[string], CandidOpt<UserProfile>>;
+  user_profile_get_by_id: ActorMethod<[{
+  id: string;
+  domain: CandidOpt<{ AI: null } | { ORG: null } | { AGENT: null }>;
+  index: CandidOpt<bigint>;
+}], CandidOpt<UserProfile>>;
   user_profile_get_by_principal: ActorMethod<[string], CandidOpt<UserProfile>>;
 }
