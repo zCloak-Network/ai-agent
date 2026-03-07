@@ -79,7 +79,9 @@ export class Session {
   /**
    * Get the resolved PEM file path for this session.
    * Uses the same resolution priority as getIdentity():
-   *   --identity=<path> > ZCLOAK_IDENTITY env > dfx default location
+   *   --identity=<path> > ~/.config/zcloak/ai-id.pem
+   *
+   * The default zCloak identity is created automatically on first use.
    */
   getPemPath(): string {
     return getPemPath(this._argv);
@@ -89,7 +91,7 @@ export class Session {
    * Get the ECDSA secp256k1 identity for this session.
    * Loaded from PEM file on first call, then cached.
    *
-   * PEM path resolution: --identity=<path> > ZCLOAK_IDENTITY env > dfx default location
+   * PEM path resolution: --identity=<path> > ~/.config/zcloak/ai-id.pem
    */
   getIdentity(): Secp256k1KeyIdentity {
     if (!this._identity) {

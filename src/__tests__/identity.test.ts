@@ -6,7 +6,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { getPemPath, DEFAULT_PEM_PATH } from '../identity.js';
+import { getPemPath, DEFAULT_PEM_PATH, ensureIdentityFile, resolveCliPath } from '../identity.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -20,15 +20,23 @@ describe('DEFAULT_PEM_PATH', () => {
   });
 
   it('ends with identity.pem', () => {
-    expect(DEFAULT_PEM_PATH).toMatch(/identity\.pem$/);
+    expect(DEFAULT_PEM_PATH).toMatch(/ai-id\.pem$/);
   });
 
-  it('contains dfx identity directory structure', () => {
-    expect(DEFAULT_PEM_PATH).toContain('.config/dfx/identity/default');
+  it('contains zcloak identity directory structure', () => {
+    expect(DEFAULT_PEM_PATH).toContain('.config/zcloak');
   });
 });
 
-// ========== getPemPath ==========
+// ========== resolveCliPath ==========
+
+describe('resolveCliPath', () => {
+  it('expands ~ to the current home directory', () => {
+    expect(resolveCliPath('~/test.pem')).toBe(path.join(os.homedir(), 'test.pem'));
+  });
+});
+
+// ========== ensureIdentityFile / getPemPath ==========
 
 describe('getPemPath', () => {
   let tmpDir: string;
@@ -54,36 +62,22 @@ describe('getPemPath', () => {
     ).toThrow('does not exist');
   });
 
-  it('reads ZCLOAK_IDENTITY env var when no --identity arg', () => {
+  it('creates and returns the zcloak default PEM path when missing', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zcloak-pem-'));
-    const pemPath = path.join(tmpDir, 'env.pem');
-    fs.writeFileSync(pemPath, 'dummy-pem-content');
+    const defaultPath = path.join(tmpDir, 'ai-id.pem');
 
-    vi.stubEnv('ZCLOAK_IDENTITY', pemPath);
-    const result = getPemPath(['node', 'script.js']);
-    expect(result).toBe(pemPath);
+    const result = getPemPath(['node', 'script.js'], defaultPath);
+    expect(result).toBe(defaultPath);
+    expect(fs.existsSync(defaultPath)).toBe(true);
   });
 
-  it('--identity takes precedence over ZCLOAK_IDENTITY', () => {
+  it('creates the zcloak default PEM when explicitly requested via --identity', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zcloak-pem-'));
-    const argPath = path.join(tmpDir, 'arg.pem');
-    const envPath = path.join(tmpDir, 'env.pem');
-    fs.writeFileSync(argPath, 'arg-pem');
-    fs.writeFileSync(envPath, 'env-pem');
+    const defaultPath = path.join(tmpDir, 'ai-id.pem');
 
-    vi.stubEnv('ZCLOAK_IDENTITY', envPath);
-    const result = getPemPath(['node', 'script.js', `--identity=${argPath}`]);
-    expect(result).toBe(argPath);
-  });
-
-  it('throws when no PEM file found anywhere', () => {
-    // Ensure ZCLOAK_IDENTITY is not set and dfx default doesn't exist
-    vi.stubEnv('ZCLOAK_IDENTITY', '');
-    // Pass argv without --identity and assume no dfx default on CI
-    // This test only works when DEFAULT_PEM_PATH doesn't exist on the machine
-    if (!fs.existsSync(DEFAULT_PEM_PATH)) {
-      expect(() => getPemPath(['node', 'script.js'])).toThrow('Identity PEM file not found');
-    }
+    const result = getPemPath(['node', 'script.js', `--identity=${defaultPath}`], defaultPath);
+    expect(result).toBe(defaultPath);
+    expect(fs.existsSync(defaultPath)).toBe(true);
   });
 
   it('handles --identity with path containing equals sign', () => {
@@ -93,5 +87,17 @@ describe('getPemPath', () => {
 
     const result = getPemPath(['node', 'script.js', `--identity=${pemPath}`]);
     expect(result).toBe(pemPath);
+  });
+
+  it('creates a valid PEM file via ensureIdentityFile', () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zcloak-pem-'));
+    const pemPath = path.join(tmpDir, 'created.pem');
+
+    const result = ensureIdentityFile(pemPath);
+
+    expect(result.created).toBe(true);
+    expect(result.path).toBe(pemPath);
+    const content = fs.readFileSync(pemPath, 'utf-8');
+    expect(content).toContain('-----BEGIN EC PRIVATE KEY-----');
   });
 });

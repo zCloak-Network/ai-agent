@@ -45,23 +45,28 @@ npm install -g @zcloak/ai-agent@latest
 ### 1.2 Identity
 `zcloak-ai` uses an **ECDSA secp256k1** PEM file for identity.
 
-Resolved in this order:
-1. `--identity=<path>` flag
-2. `~/.config/dfx/identity/default/identity.pem`
+Default agent identity path:
+1. `~/.config/zcloak/ai-id.pem`
+
+Identity selection rule:
+1. If the user explicitly asks to use another PEM, honor that request with `--identity=<path>`.
+2. Otherwise, always use the dedicated zCloak agent identity at `~/.config/zcloak/ai-id.pem`.
+3. If that file does not exist yet, create it automatically on first use and keep reusing it afterward.
 
 When identity matters, run the CLI yourself and tell the user which PEM path and principal are currently in use. Do not ask the user to run the identity commands unless they explicitly want CLI instructions.
+Unless the user explicitly requests an identity switch, keep using the same dedicated zCloak PEM on later commands.
 
 Internal command reference:
 ```bash
-zcloak-ai identity show
+zcloak-ai identity show --identity=~/.config/zcloak/ai-id.pem
 ```
 
-If no identity exists, create or reuse one as needed, then report the resulting principal and whether an existing PEM was reused.
+If no identity exists, create or reuse the dedicated zCloak PEM automatically, then report the resulting principal and whether an existing PEM was reused.
 
 Internal command reference:
 ```bash
-# Generates ~/.config/dfx/identity/default/identity.pem by default
-zcloak-ai identity generate
+# Generates ~/.config/zcloak/ai-id.pem by default
+zcloak-ai identity generate --identity=~/.config/zcloak/ai-id.pem
 
 # Or specify a custom path
 zcloak-ai identity generate --output=./my-agent.pem

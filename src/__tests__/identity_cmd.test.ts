@@ -1,7 +1,7 @@
 /**
  * Tests for identity_cmd.ts — Identity key management command
  *
- * Covers: generate (new PEM, --output, --force, overwrite protection),
+ * Covers: generate (new PEM, --output, --identity alias, --force, overwrite protection),
  * show (print PEM path + principal), command routing, help output.
  */
 
@@ -74,6 +74,18 @@ describe('identity generate command', () => {
     // Verify output messages
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Identity PEM generated'));
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Principal ID'));
+  });
+
+  it('treats --identity as an alias for the generate output path', () => {
+    const outputPath = path.join(tmpDir, 'alias-identity.pem');
+    const session = new Session(['node', 'identity_cmd.js', 'generate', `--identity=${outputPath}`]);
+
+    run(session);
+
+    expect(fs.existsSync(outputPath)).toBe(true);
+    const content = fs.readFileSync(outputPath, 'utf-8');
+    expect(content).toContain('-----BEGIN EC PRIVATE KEY-----');
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining(`Identity PEM generated: ${outputPath}`));
   });
 
   it('reuses existing valid PEM file without --force', () => {

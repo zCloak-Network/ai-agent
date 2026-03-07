@@ -1,80 +1,117 @@
 /**
  * zCloak.ai Identity Management Module
  *
- * Loads ECDSA secp256k1 identity from dfx-compatible PEM files for signing operations.
- * Replaces the original `dfx identity get-principal` and similar commands.
+ * Loads ECDSA secp256k1 identity from a zCloak-managed PEM file for signing operations.
  *
- * dfx generates EC PRIVATE KEY (SEC1/PKCS#1 format, OID 1.3.132.0.10 secp256k1),
- * which is handled by Secp256k1KeyIdentity from @dfinity/identity-secp256k1.
+ * The CLI uses a dedicated default path under ~/.config/zcloak/ai-id.pem rather than
+ * reusing dfx's default identity location. This keeps the agent identity stable and
+ * separate from any existing dfx identity the user may already have.
  *
  * PEM file location priority:
  *   1. --identity=<path> command line argument
- *   2. ZCLOAK_IDENTITY environment variable
- *   3. ~/.config/dfx/identity/default/identity.pem (dfx default location)
+ *   2. ~/.config/zcloak/ai-id.pem (zCloak default location, auto-created if missing)
  */
 
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { generateKeyPairSync } from 'crypto';
 import { Secp256k1KeyIdentity } from '@dfinity/identity-secp256k1';
 
 
 // ========== PEM File Lookup ==========
 
 /**
- * dfx default identity PEM file path
- * Unified for macOS and Linux: ~/.config/dfx/identity/default/identity.pem
+ * zCloak default identity PEM file path
+ * Unified for macOS and Linux: ~/.config/zcloak/ai-id.pem
  */
 export const DEFAULT_PEM_PATH: string = path.join(
   os.homedir(),
-  '.config', 'dfx', 'identity', 'default', 'identity.pem'
+  '.config', 'zcloak', 'ai-id.pem'
 );
 
 /**
+ * Expand CLI paths like ~/foo.pem to an absolute path.
+ */
+export function resolveCliPath(rawPath: string): string {
+  if (rawPath === '~') {
+    return os.homedir();
+  }
+  if (rawPath.startsWith(`~${path.sep}`)) {
+    return path.join(os.homedir(), rawPath.slice(2));
+  }
+  if (rawPath.startsWith('~/')) {
+    return path.join(os.homedir(), rawPath.slice(2));
+  }
+  return path.resolve(rawPath);
+}
+
+/**
+ * Ensure a PEM file exists at the requested path.
+ * If the file already exists, validate and reuse it unless force=true.
+ * If the file does not exist, create parent directories and generate a new key.
+ */
+export function ensureIdentityFile(
+  pemPath: string,
+  options?: { force?: boolean },
+): { path: string; created: boolean } {
+  const resolved = resolveCliPath(pemPath);
+  const force = !!options?.force;
+
+  if (fs.existsSync(resolved) && !force) {
+    try {
+      loadIdentityFromPath(resolved);
+      return { path: resolved, created: false };
+    } catch {
+      throw new Error(`Identity file exists but is not a valid PEM: ${resolved}`);
+    }
+  }
+
+  const dir = path.dirname(resolved);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'secp256k1' });
+  const pem = privateKey.export({ type: 'sec1', format: 'pem' }) as string;
+  fs.writeFileSync(resolved, pem, { mode: 0o600 });
+  return { path: resolved, created: true };
+}
+
+/**
  * Get PEM file path.
- * Searches by priority: --identity argument > environment variable > dfx default location.
+ * Searches by priority: --identity argument > zCloak default location.
+ * The zCloak default location is created automatically on first use.
  *
  * When called with an explicit argv array, uses that instead of process.argv.
  * This enables deterministic, testable behavior without global state dependency.
  *
- * @param argv - Optional explicit argument array (defaults to process.argv)
+  * @param argv - Optional explicit argument array (defaults to process.argv)
+ * @param defaultPemPath - Override for tests
  * @returns Absolute path to PEM file
- * @throws {Error} If no PEM file can be found or the specified path does not exist
+ * @throws {Error} If an explicitly specified path does not exist
  */
-export function getPemPath(argv?: string[]): string {
+export function getPemPath(argv?: string[], defaultPemPath: string = DEFAULT_PEM_PATH): string {
   const effectiveArgv = argv ?? process.argv;
+  const resolvedDefault = resolveCliPath(defaultPemPath);
 
   // 1. Get from --identity=<path> argument
   const identityArg = effectiveArgv.find(a => a.startsWith('--identity='));
   if (identityArg) {
     const p = identityArg.split('=').slice(1).join('='); // Support paths containing =
-    const resolved = path.resolve(p);
+    const resolved = resolveCliPath(p);
     if (!fs.existsSync(resolved)) {
+      if (resolved === resolvedDefault) {
+        ensureIdentityFile(resolvedDefault);
+        return resolvedDefault;
+      }
       throw new Error(`Specified PEM file does not exist: ${resolved}`);
     }
     return resolved;
   }
 
-  // 2. Get from environment variable
-  if (process.env.ZCLOAK_IDENTITY) {
-    const resolved = path.resolve(process.env.ZCLOAK_IDENTITY);
-    if (!fs.existsSync(resolved)) {
-      throw new Error(`PEM file specified by ZCLOAK_IDENTITY does not exist: ${resolved}`);
-    }
-    return resolved;
-  }
-
-  // 3. Use dfx default location
-  if (fs.existsSync(DEFAULT_PEM_PATH)) {
-    return DEFAULT_PEM_PATH;
-  }
-
-  throw new Error(
-    'Identity PEM file not found. Provide one via:\n' +
-    '  1. --identity=<pem_file_path>\n' +
-    '  2. Set environment variable ZCLOAK_IDENTITY=<pem_file_path>\n' +
-    `  3. Ensure dfx default identity exists: ${DEFAULT_PEM_PATH}`
-  );
+  ensureIdentityFile(resolvedDefault);
+  return resolvedDefault;
 }
 
 // ========== Identity Management ==========
