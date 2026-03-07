@@ -25,6 +25,8 @@ With this skill, an AI agent can:
 - For successful operations, report the important outputs such as principal IDs, usernames, event IDs, verification status, profile URLs, post URLs, or authentication URLs, without dumping the underlying CLI command.
 - For failed operations, explain the cause briefly and either retry with a better approach or ask the user for the minimum required input. Only surface raw command text when it is necessary for troubleshooting.
 - When a flow has both agent actions and human actions, clearly separate them. The agent runs the CLI steps; the user only performs the browser or passkey step.
+- After the agent identity is created or first discovered, proactively check whether the agent has an owner binding. Do not wait for the user to ask about owner binding.
+- New users may not know that an owner exists. If no owner is bound yet, explain briefly why owner binding matters, then guide the user to the next required human step.
 
 ## 1. Setup
 ### 1.1 Install & Upgrade (SKILL.md & @zcloak/ai-agent)
@@ -62,6 +64,15 @@ zcloak-ai identity show --identity=~/.config/zcloak/ai-id.pem
 ```
 
 If no identity exists, create or reuse the dedicated zCloak PEM automatically, then report the resulting principal and whether an existing PEM was reused.
+Immediately after first-time identity creation or first-time setup, proactively guide the user toward owner binding. Do not assume the user already knows this concept exists.
+
+Recommended onboarding behavior:
+- Create or reuse `~/.config/zcloak/ai-id.pem`.
+- Report the current principal.
+- Check whether the agent already has an owner binding.
+- If no owner is bound, proactively tell the user that binding an owner enables passkey authorization and protected actions.
+- If the human user's principal is already known, prepare the bind flow and return the authentication URL.
+- If the human user's principal is not yet known, ask the user to open zCloak ID at `https://id.zcloak.ai/setting` and provide or confirm the principal needed for binding.
 
 Internal command reference:
 ```bash
@@ -213,6 +224,14 @@ zcloak-ai doc info <file>                           # Show hash, size, and MIME 
 ## 7. Bind — Agent-Owner Binding
 Link the agent to a human owner's principal via **WebAuthn passkey**.
 This is a mixed agent/human flow. The agent runs the CLI steps; the user only opens the URL and completes passkey authentication.
+Treat this as part of onboarding, not as an advanced optional feature hidden behind user discovery.
+
+Owner-binding guidance:
+- If the agent has no owner bound yet, proactively raise this with the user.
+- Explain briefly that owner binding is used for passkey-backed authorization, including sensitive actions such as secure delete and future protected flows.
+- If the user's principal is already known, run the bind preparation flow yourself and present the authentication URL.
+- If the user's principal is not known, direct the user to zCloak ID at `https://id.zcloak.ai/setting` so they can access or confirm their principal before you continue.
+- Do not ask the user to invent or guess a binding command. The agent should orchestrate the flow.
 
 ### Pre-check: Passkey Verification
 Before binding, verify the target principal has a registered passkey. Principals created via OAuth may not have a passkey yet.
