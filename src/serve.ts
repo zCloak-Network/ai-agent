@@ -33,8 +33,10 @@ import {
   type RpcResponse,
   type EncryptParams,
   type DecryptParams,
+  type IbeDecryptParams,
   type EncryptResult,
   type DecryptResult,
+  type IbeDecryptResult,
   type StatusResult,
   successResponse,
   errorResponse,
@@ -44,6 +46,9 @@ import {
 
 /** Maximum data size for encrypt/decrypt operations (1 GB) */
 const MAX_DATA_SIZE = 1024 * 1024 * 1024;
+
+/** Maximum IBE ciphertext size for ibe-decrypt (64 KB payload + IBE overhead) */
+const MAX_IBE_DATA_SIZE = 64 * 1024 + 256;
 
 // ============================================================================
 // Shared Request Handling
@@ -89,6 +94,14 @@ function handleRequest(
       return { response: successResponse(id, result), action: "continue" };
     }
 
+    case "ibe-decrypt": {
+      const result = handleIbeDecrypt(req.params as IbeDecryptParams | undefined, keyStore);
+      if ("error" in result) {
+        return { response: errorResponse(id, result.error), action: "continue" };
+      }
+      return { response: successResponse(id, result), action: "continue" };
+    }
+
     case "status": {
       const status: StatusResult = {
         status: "running",
@@ -119,7 +132,7 @@ function handleRequest(
       return {
         response: errorResponse(
           id,
-          `Unknown method '${method}'. Supported: encrypt, decrypt, status, quit, shutdown`,
+          `Unknown method '${method}'. Supported: encrypt, decrypt, ibe-decrypt, status, quit, shutdown`,
         ),
         action: "continue",
       };
@@ -291,6 +304,78 @@ function handleDecrypt(
   }
 
   return { error: "Either input_file or data_base64 must be provided" };
+}
+
+/**
+ * Handle the "ibe-decrypt" method.
+ *
+ * Decrypts IBE ciphertext using the VetKey cached in KeyStore.
+ * Used by Mail daemon mode: the sender IBE-encrypted a message for
+ * this daemon's derivation identity, and we hold the VetKey to decrypt it.
+ */
+function handleIbeDecrypt(
+  params: IbeDecryptParams | undefined,
+  keyStore: KeyStore,
+): IbeDecryptResult | { error: string } {
+  if (!params) return { error: "Missing ibe-decrypt params" };
+
+  if (!keyStore.hasIbeSupport) {
+    return { error: "This daemon does not have IBE support (VetKey not cached)" };
+  }
+
+  if (!params.ibe_identity) {
+    return { error: "ibe_identity is required" };
+  }
+
+  if (!params.ciphertext_base64) {
+    return { error: "ciphertext_base64 is required" };
+  }
+  if (params.ibe_identity !== keyStore.derivationId) {
+    return {
+      error: `ibe_identity mismatch: expected "${keyStore.derivationId}", got "${params.ibe_identity}"`,
+    };
+  }
+
+  // Size check before base64 decode
+  if (params.ciphertext_base64.length > MAX_IBE_DATA_SIZE * 4 / 3 + 4) {
+    return {
+      error: `ciphertext_base64 too large: ${params.ciphertext_base64.length} chars (max payload ${MAX_IBE_DATA_SIZE} bytes)`,
+    };
+  }
+
+  let ciphertext: Buffer;
+  try {
+    ciphertext = decodeBase64Strict(params.ciphertext_base64, "ciphertext_base64");
+  } catch (e) {
+    return { error: `Invalid base64 ciphertext: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  if (ciphertext.length > MAX_IBE_DATA_SIZE) {
+    return {
+      error: `ciphertext too large after decode: ${ciphertext.length} bytes (max ${MAX_IBE_DATA_SIZE} bytes)`,
+    };
+  }
+
+  let plaintext: Buffer;
+  try {
+    plaintext = keyStore.ibeDecrypt(params.ibe_identity, ciphertext);
+  } catch (e) {
+    return { error: `IBE decryption failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+
+  return {
+    data_base64: plaintext.toString("base64"),
+    plaintext_size: plaintext.length,
+  };
+}
+
+function decodeBase64Strict(value: string, fieldName: string): Buffer {
+  if (value.length === 0) {
+    return Buffer.alloc(0);
+  }
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    throw new Error(`Invalid ${fieldName}: expected base64`);
+  }
+  return Buffer.from(value, "base64");
 }
 
 /**

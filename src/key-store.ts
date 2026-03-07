@@ -26,19 +26,31 @@ import { encryptionError, canisterCallError } from './error.js';
  * In-memory AES-256 key holder for daemon mode.
  *
  * The AES key is derived from VetKey at startup and held in a Buffer.
- * Call destroy() when done to zero the key bytes.
+ * Optionally caches the raw VetKey bytes for IBE decryption (Mail daemon mode).
+ * Call destroy() when done to zero all key bytes.
  */
 export class KeyStore {
   /** AES-256 key (32 bytes), derived from VetKey via HKDF */
   private aesKey: Buffer;
+  /** Raw VetKey bytes (48 bytes, compressed G1 point) — cached for IBE decryption */
+  private vetkeyBytes: Buffer | null;
+  /** IBE derived public key bytes (96 bytes) — cached for IBE decryption */
+  private dpkBytes: Uint8Array | null;
   /** Derivation ID used for this key (format: "{principal}:{key_name}") */
   private _derivationId: string;
   /** Whether the key has been destroyed */
   private destroyed = false;
 
-  private constructor(aesKey: Buffer, derivationId: string) {
+  private constructor(
+    aesKey: Buffer,
+    derivationId: string,
+    vetkeyBytes?: Buffer,
+    dpkBytes?: Uint8Array,
+  ) {
     this.aesKey = aesKey;
     this._derivationId = derivationId;
+    this.vetkeyBytes = vetkeyBytes ?? null;
+    this.dpkBytes = dpkBytes ?? null;
   }
 
   /**
@@ -103,7 +115,8 @@ export class KeyStore {
     // Step 5: HKDF derive AES-256 key from VetKey bytes
     const aesKey = cryptoOps.vetkeyToAes256(vetkeyBytes);
 
-    return new KeyStore(aesKey, derivationId);
+    // Cache raw VetKey and DPK for IBE decryption (Mail daemon mode)
+    return new KeyStore(aesKey, derivationId, Buffer.from(vetkeyBytes), dpkBytes);
   }
 
   /**
@@ -114,6 +127,21 @@ export class KeyStore {
   static createForTest(derivationId: string, key?: Buffer): KeyStore {
     const aesKey = key ?? Buffer.alloc(32, 0x42); // Fixed test key
     return new KeyStore(aesKey, derivationId);
+  }
+
+  /**
+   * Create a KeyStore with VetKey + DPK for IBE testing.
+   *
+   * @internal
+   */
+  static createForTestWithIbe(
+    derivationId: string,
+    vetkeyBytes: Buffer,
+    dpkBytes: Uint8Array,
+    key?: Buffer,
+  ): KeyStore {
+    const aesKey = key ?? Buffer.alloc(32, 0x42);
+    return new KeyStore(aesKey, derivationId, vetkeyBytes, dpkBytes);
   }
 
   /**
@@ -140,21 +168,59 @@ export class KeyStore {
     return cryptoOps.aes256Decrypt(this.aesKey, ciphertext);
   }
 
+  /**
+   * IBE-decrypt a ciphertext using the cached VetKey.
+   *
+   * Used by Mail daemon mode: the sender IBE-encrypted using identity
+   * "{recipient_principal}:Mail", and the recipient's daemon holds the
+   * VetKey for that identity.
+   *
+   * @param ibeIdentity - IBE identity string used during encryption
+   * @param ciphertextBytes - IBE ciphertext bytes
+   * @returns Decrypted plaintext
+   */
+  ibeDecrypt(ibeIdentity: string, ciphertextBytes: Uint8Array): Buffer {
+    this.checkNotDestroyed();
+    if (!this.vetkeyBytes || !this.dpkBytes) {
+      throw encryptionError(
+        "KeyStore does not have cached VetKey/DPK bytes (required for IBE decryption)",
+      );
+    }
+    return Buffer.from(
+      cryptoOps.ibeDecryptWithCachedKey(
+        this.vetkeyBytes,
+        this.dpkBytes,
+        ibeIdentity,
+        ciphertextBytes,
+      ),
+    );
+  }
+
+  /** Whether this KeyStore supports IBE decryption (has cached VetKey) */
+  get hasIbeSupport(): boolean {
+    return this.vetkeyBytes !== null && this.dpkBytes !== null;
+  }
+
   /** Get the derivation ID (for status reporting, not sensitive) */
   get derivationId(): string {
     return this._derivationId;
   }
 
   /**
-   * Destroy the key store by zeroing the AES key bytes.
+   * Destroy the key store by zeroing all key bytes.
    *
-   * After calling destroy(), encrypt() and decrypt() will throw.
+   * After calling destroy(), encrypt(), decrypt(), and ibeDecrypt() will throw.
    * This is best-effort memory cleanup — JavaScript GC may have
    * created copies we cannot reach.
    */
   destroy(): void {
     if (!this.destroyed) {
       this.aesKey.fill(0);
+      if (this.vetkeyBytes) {
+        this.vetkeyBytes.fill(0);
+        this.vetkeyBytes = null;
+      }
+      this.dpkBytes = null;
       this.destroyed = true;
     }
   }

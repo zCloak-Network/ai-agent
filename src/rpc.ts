@@ -7,11 +7,12 @@
  *   - Response: {"id": <same>, "result": <object>} or {"id": <same>, "error": <string>}
  *
  * Supported methods:
- *   encrypt   — Encrypt file or inline data using the held AES-256 key
- *   decrypt   — Decrypt file or inline data using the held AES-256 key
- *   status    — Query daemon status (derivation_id, principal, uptime)
- *   quit      — Close current connection (UDS mode) or stop daemon (stdio mode)
- *   shutdown  — Stop the entire daemon gracefully (UDS mode only)
+ *   encrypt      — Encrypt file or inline data using the held AES-256 key
+ *   decrypt      — Decrypt file or inline data using the held AES-256 key
+ *   ibe-decrypt  — Decrypt IBE ciphertext using cached VetKey (Mail daemon mode)
+ *   status       — Query daemon status (derivation_id, principal, uptime)
+ *   quit         — Close current connection (UDS mode) or stop daemon (stdio mode)
+ *   shutdown     — Stop the entire daemon gracefully (UDS mode only)
  */
 
 // ============================================================================
@@ -22,7 +23,7 @@
 export interface RpcRequest {
   /** Request ID for matching responses (number or string) */
   id: number | string | null;
-  /** Method name: "encrypt", "decrypt", "status", "quit", or "shutdown" */
+  /** Method name: "encrypt", "decrypt", "ibe-decrypt", "status", "quit", or "shutdown" */
   method: string;
   /** Method parameters (optional, defaults to null) */
   params?: Record<string, unknown>;
@@ -55,6 +56,28 @@ export interface DecryptParams {
   output_file?: string;
   /** Inline ciphertext as base64 (mutually exclusive with input_file) */
   data_base64?: string;
+}
+
+/**
+ * Parameters for the "ibe-decrypt" method (Mail daemon mode).
+ *
+ * Decrypts IBE ciphertext using the VetKey cached at daemon startup.
+ * The sender encrypted with ibeEncrypt(dpk, "{recipient}:Mail", message),
+ * and this daemon holds the VetKey for that identity.
+ */
+export interface IbeDecryptParams {
+  /** IBE identity string used during encryption (e.g. "{principal}:Mail") */
+  ibe_identity: string;
+  /** IBE ciphertext as base64 */
+  ciphertext_base64: string;
+}
+
+/** Result payload for the "ibe-decrypt" method */
+export interface IbeDecryptResult {
+  /** Base64-encoded decrypted plaintext */
+  data_base64: string;
+  /** Decrypted plaintext size in bytes */
+  plaintext_size: number;
 }
 
 // ============================================================================

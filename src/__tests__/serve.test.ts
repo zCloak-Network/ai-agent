@@ -376,6 +376,103 @@ describe('Stdio Daemon', () => {
     // If we get here without timeout, the daemon handled EOF correctly
   });
 
+  it('should reject ibe-decrypt when daemon has no IBE support', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+
+    // createForTest does NOT pass vetkeyBytes/dpkBytes → hasIbeSupport=false
+    const ks = KeyStore.createForTest('stdio-noibe:default');
+    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'stdio-noibe:default', input, output);
+
+    // Skip ready
+    await waitForLines(output, 1);
+
+    // Send ibe-decrypt request
+    input.write(JSON.stringify({
+      id: 1,
+      method: 'ibe-decrypt',
+      params: { ibe_identity: 'test:Mail', ciphertext_base64: 'AAAA' },
+    }) + '\n');
+
+    const [resp] = await waitForLines(output, 1);
+    expect(resp.error).toBeDefined();
+    expect(resp.error).toContain('IBE support');
+
+    // Quit
+    input.write('{"id":2,"method":"quit"}\n');
+    await daemonPromise;
+  });
+
+  it('should reject ibe-decrypt with missing params', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+
+    const ks = KeyStore.createForTest('stdio-noparams:default');
+    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'stdio-noparams:default', input, output);
+
+    // Skip ready
+    await waitForLines(output, 1);
+
+    // Send ibe-decrypt without params
+    input.write(JSON.stringify({ id: 1, method: 'ibe-decrypt' }) + '\n');
+
+    const [resp] = await waitForLines(output, 1);
+    expect(resp.error).toBeDefined();
+    expect(resp.error).toContain('Missing');
+
+    // Quit
+    input.write('{"id":2,"method":"quit"}\n');
+    await daemonPromise;
+  });
+
+  it('should reject ibe-decrypt when ibe_identity does not match the daemon derivation id', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+
+    const vetkeyBytes = crypto.randomBytes(48);
+    const dpkBytes = new Uint8Array(96);
+    const ks = KeyStore.createForTestWithIbe('test-principal:Mail', vetkeyBytes, dpkBytes);
+    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'test-principal:Mail', input, output);
+
+    await waitForLines(output, 1);
+
+    input.write(JSON.stringify({
+      id: 1,
+      method: 'ibe-decrypt',
+      params: { ibe_identity: 'someone-else:Mail', ciphertext_base64: 'QUJDRA==' },
+    }) + '\n');
+
+    const [resp] = await waitForLines(output, 1);
+    expect(resp.error).toContain('ibe_identity mismatch');
+
+    input.write('{"id":2,"method":"quit"}\n');
+    await daemonPromise;
+  });
+
+  it('should reject ibe-decrypt with invalid base64 ciphertext', async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+
+    const vetkeyBytes = crypto.randomBytes(48);
+    const dpkBytes = new Uint8Array(96);
+    const ks = KeyStore.createForTestWithIbe('test-principal:Mail', vetkeyBytes, dpkBytes);
+    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'test-principal:Mail', input, output);
+
+    await waitForLines(output, 1);
+
+    input.write(JSON.stringify({
+      id: 1,
+      method: 'ibe-decrypt',
+      params: { ibe_identity: 'test-principal:Mail', ciphertext_base64: '@@@' },
+    }) + '\n');
+
+    const [resp] = await waitForLines(output, 1);
+    expect(resp.error).toContain('Invalid base64 ciphertext');
+
+    input.write('{"id":2,"method":"quit"}\n');
+    await daemonPromise;
+  });
+
   it('should handle invalid JSON gracefully', async () => {
     const input = new PassThrough();
     const output = new PassThrough();

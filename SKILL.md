@@ -16,6 +16,7 @@ With this skill, an AI agent can:
 - **Delete** files with 2FA (passkey) verification
 - **Encrypt/Decrypt** files and data using ICP VetKey (IBE + AES-256-GCM daemon mode)
 - **Grant/Revoke** Kind5 decryption access to other users
+- **Send/Receive** encrypted messages between agents using IBE (Mail mode)
 
 ## Hard Rules For User-Facing Replies
 - Treat `zcloak-ai` as an internal tool that the agent should run on the user's behalf.
@@ -543,7 +544,56 @@ Without `nohup` or a process manager, the daemon will be killed by SIGHUP when t
 - Stale PID files are automatically cleaned up on startup
 - Daemon encrypted files use VKDA format: `[magic "VKDA"][version][nonce][ciphertext+GCM tag]`
 - Maximum file size: 1 GB
-- VetKey uses BLS12-381 — key derivation via ICP consensus (no single point of trust)
+- VetKey uses BLS12-381 — key derivation via blockchain consensus (no single point of trust)
+
+### 9.8 Encrypted Messaging (Mail Mode)
+Send and receive encrypted messages between agents using IBE. The sender encrypts for the recipient's Mail identity (`{principal}:Mail`), and the recipient's Mail daemon decrypts locally.
+
+**Key properties:**
+- Sender only needs the IBE public key (no key exchange, no recipient key pair needed)
+- Recipient starts a Mail daemon once; all subsequent decryptions are instant
+- Maximum payload: 64 KB
+- Message format: JSON envelope with base64-encoded IBE ciphertext
+
+#### Send an Encrypted Message
+Encrypt a message for a recipient identified by AI-ID(principal):
+Internal command reference:
+```bash
+# Send by AI Name
+zcloak-ai vetkey send-msg --to="runner#8939.agent" --text="Hello, this is secret"
+# Send by raw principal
+zcloak-ai vetkey send-msg --to="pk4np-7pdod-..." --text="Hello, this is secret"
+# Send file content
+zcloak-ai vetkey send-msg --to="runner#8939.agent" --file=./secret.txt
+```
+
+Output: JSON envelope ready for transport:
+```json
+{"from":"<sender_principal>","from_pubkey":"<hex-der>","to":"runner#8939.agent","payload_type":"text","ibe_id":"{principal}:Mail","ct":"<base64>","ts":1709827200000,"sig":"<base64>"}
+```
+
+File payloads use `"payload_type":"file"` and include `"filename":"secret.txt"`.
+
+#### Receive (Decrypt) a Message
+Requires a running Mail daemon (`key-name="Mail"`):
+Internal command reference:
+```bash
+# Start Mail daemon (one-time, derives VetKey for {principal}:Mail)
+nohup zcloak-ai vetkey serve --key-name "Mail" 2>~/.vetkey-tool/mail-daemon.log &
+# Decrypt a received message envelope
+zcloak-ai vetkey recv-msg --data='{"from":"...","from_pubkey":"...","to":"...","payload_type":"text","ibe_id":"...","ct":"...","ts":...,"sig":"..."}' --json
+
+# For file payloads, write the decrypted bytes to a path
+zcloak-ai vetkey recv-msg --data='{"from":"...","from_pubkey":"...","to":"...","payload_type":"file","filename":"secret.txt","ibe_id":"...","ct":"...","ts":...,"sig":"..."}' --output=./secret.txt
+```
+
+#### Mail Daemon JSON-RPC
+The Mail daemon also supports direct `ibe-decrypt` RPC calls via Unix socket:
+```json
+{"id":1,"method":"ibe-decrypt","params":{"ibe_identity":"{principal}:Mail","ciphertext_base64":"<base64>"}}
+```
+
+> Same identity PEM + `--key-name="Mail"` = same VetKey every time. The Mail daemon can be restarted safely.
 
 ## 10. Global Options
 Every command accepts these flags:

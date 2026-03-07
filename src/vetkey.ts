@@ -1,9 +1,10 @@
 /**
  * VetKey CLI Module — VetKey IBE encryption/decryption and daemon management
  *
- * Provides two encryption modes:
+ * Provides three encryption modes:
  *   1. IBE mode: Per-operation Identity-Based Encryption for Kind5 PrivatePost
  *   2. Daemon mode: Long-running AES-256-GCM daemon for fast file encryption
+ *   3. Mail mode: IBE-based encrypted messaging between agents
  *
  * Sub-commands:
  *   encrypt-sign    Encrypt + sign Kind5 PrivatePost in one step
@@ -17,13 +18,17 @@
  *   revoke          Revoke an access grant
  *   grants-out      List grants issued by the caller (as grantor)
  *   grants-in       List grants received by the caller (as grantee)
+ *   send-msg        Encrypt a message for a recipient (IBE Mail)
+ *   recv-msg        Decrypt a received message via Mail daemon
  *
  * Usage: zcloak-ai vetkey <sub-command> [options]
  */
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, statSync, writeFileSync } from 'fs';
+import { basename } from 'path';
 import { createConnection } from 'net';
 import { createInterface } from 'readline';
+import { createPublicKey, createVerify } from 'crypto';
 import { Principal } from '@dfinity/principal';
 import type { Session } from './session.js';
 import * as cryptoOps from './crypto.js';
@@ -79,6 +84,12 @@ export async function run(session: Session): Promise<void> {
     case 'grants-in':
       await cmdGrantsIn(session);
       break;
+    case 'send-msg':
+      await cmdSendMsg(session);
+      break;
+    case 'recv-msg':
+      await cmdRecvMsg(session);
+      break;
     default:
       showHelp();
       process.exit(command ? 1 : 0);
@@ -107,6 +118,10 @@ function showHelp(): void {
   console.log('  grants-out      List grants you issued (as grantor)');
   console.log('  grants-in       List grants you received (as grantee)');
   console.log('');
+  console.log('Encrypted Messaging:');
+  console.log('  send-msg        Encrypt a message for a recipient (IBE)');
+  console.log('  recv-msg        Decrypt a received message via Mail daemon');
+  console.log('');
   console.log('Options:');
   console.log('  --text=<content>        Plaintext to encrypt');
   console.log('  --file=<path>           File to encrypt');
@@ -122,6 +137,8 @@ function showHelp(): void {
   console.log('  --event-ids=<id1,id2>   Event IDs to authorize (for grant, empty=all)');
   console.log('  --duration=<dur>        Grant duration: 30d, 1y, permanent (for grant)');
   console.log('  --grant-id=<id>         Grant ID (for revoke)');
+  console.log('  --to=<AI-ID|principal>  Recipient AI-ID or principal (for send-msg)');
+  console.log('  --data=<json>           Encrypted message JSON envelope (for recv-msg)');
 }
 
 // ============================================================================
@@ -862,4 +879,442 @@ function printGrants(grants: any[], direction: 'issued' | 'received'): void {
     }
     console.log('');
   }
+}
+
+// ============================================================================
+// Encrypted Messaging Commands (send-msg / recv-msg)
+// ============================================================================
+
+/** Maximum plaintext payload for encrypted messages (64 KB) */
+const MAX_MSG_PAYLOAD = 64 * 1024;
+/** Domain separator used for sender signature over the message envelope */
+const MAIL_SIGNATURE_DOMAIN = 'zcloak-mail-envelope';
+type MessagePayloadType = 'text' | 'file';
+
+/**
+ * JSON envelope for encrypted messages transmitted between agents.
+ *
+ * The sender IBE-encrypts the message using the recipient's Mail identity
+ * ("{recipient_principal}:Mail") and wraps the result in this envelope.
+ */
+interface EncryptedMessageEnvelope {
+  /** Sender principal */
+  from: string;
+  /** Sender secp256k1 public key (DER/SPKI, hex-encoded) */
+  from_pubkey: string;
+  /** Recipient display identifier (human-readable AI-ID or raw principal) */
+  to: string;
+  /** Payload type */
+  payload_type: MessagePayloadType;
+  /** Original filename for file payloads (basename only) */
+  filename?: string;
+  /** IBE identity used for encryption (e.g. "{principal}:Mail") */
+  ibe_id: string;
+  /** Base64-encoded IBE ciphertext */
+  ct: string;
+  /** Timestamp (milliseconds since epoch) */
+  ts: number;
+  /** Sender signature over the envelope metadata + ciphertext */
+  sig: string;
+}
+
+/**
+ * send-msg: Encrypt a message for a recipient using IBE.
+ *
+ * The recipient's Mail identity is "{recipient_principal}:Mail".
+ * The sender fetches the IBE public key from canister, encrypts locally,
+ * and outputs a JSON envelope for transport.
+ *
+ * Options:
+ *   --to=<AI-ID or principal>   (required) Recipient identifier
+ *   --text=<content>            (required) Message to encrypt
+ *   --json                      Output in JSON format (default: true for send-msg)
+ */
+async function cmdSendMsg(session: Session): Promise<void> {
+  const args = session.args;
+  const rawTo = args['to'];
+  if (rawTo === true) throw new Error('--to requires a value (e.g. --to=runner#8939.agent)');
+  const to = rawTo as string | undefined;
+  const text = args['text'] as string | boolean | undefined;
+  const file = args['file'] as string | boolean | undefined;
+
+  if (!to) {
+    throw new Error('--to=<AI-ID or principal> is required');
+  }
+
+  const { plaintext, payloadType, filename } = readMessageInput(text, file);
+
+  // Resolve recipient: if it looks like an agent name (contains # and .agent),
+  // resolve to principal via registry; otherwise treat as raw principal.
+  let recipientPrincipal: string;
+  let recipientDisplay: string;
+
+  if (to.includes('#') && to.includes('.agent')) {
+    // Resolve AI-ID → principal
+    const registryActor = await session.getAnonymousRegistryActor();
+    const result = await registryActor.get_user_principal(to);
+    if (!result || result.length === 0) {
+      throw new Error(`Cannot resolve AI-ID "${to}" — agent not found in registry`);
+    }
+    recipientPrincipal = result[0]!.toText();
+    recipientDisplay = to;
+  } else {
+    try {
+      recipientPrincipal = Principal.fromText(to).toText();
+    } catch {
+      throw new Error(`Invalid recipient principal: "${to}"`);
+    }
+    recipientDisplay = to;
+  }
+
+  // IBE identity for recipient's mailbox
+  const ibeIdentity = `${recipientPrincipal}:Mail`;
+
+  // Get IBE public key from canister
+  const actor = await session.getSignActor();
+  let dpkBytes: Uint8Array;
+  try {
+    const result = await (actor as any).get_ibe_public_key() as Uint8Array;
+    dpkBytes = new Uint8Array(result);
+  } catch (e) {
+    throw canisterCallError(
+      `get_ibe_public_key failed: ${e instanceof Error ? e.message : String(e)}`, e,
+    );
+  }
+
+  // IBE-encrypt the message for the recipient's Mail identity
+  const ciphertext = cryptoOps.ibeEncrypt(dpkBytes, ibeIdentity, plaintext);
+
+  const senderIdentity = session.getIdentity();
+  const senderPrincipal = senderIdentity.getPrincipal().toText();
+  const senderPublicKeyDer = Buffer.from(senderIdentity.getPublicKey().toDer());
+  const envelope: EncryptedMessageEnvelope = {
+    from: senderPrincipal,
+    from_pubkey: senderPublicKeyDer.toString('hex'),
+    to: recipientDisplay,
+    payload_type: payloadType,
+    filename,
+    ibe_id: ibeIdentity,
+    ct: Buffer.from(ciphertext).toString('base64'),
+    ts: Date.now(),
+    sig: '',
+  };
+  const signature = await senderIdentity.sign(serializeEnvelopeForSigning(envelope));
+  envelope.sig = Buffer.from(signature).toString('base64');
+
+  // Output the envelope as JSON (always JSON for machine consumption)
+  console.log(JSON.stringify(envelope));
+}
+
+/**
+ * recv-msg: Decrypt a received encrypted message via the Mail daemon.
+ *
+ * The recipient must have a running daemon with key-name="Mail".
+ * The daemon holds the VetKey for "{recipient_principal}:Mail" and
+ * performs IBE decryption via the "ibe-decrypt" RPC method.
+ *
+ * Options:
+ *   --data=<json>     (required) Encrypted message JSON envelope
+ *   --json            Output in JSON format
+ */
+async function cmdRecvMsg(session: Session): Promise<void> {
+  const args = session.args;
+  const rawData = args['data'];
+  if (rawData === true) throw new Error('--data requires a JSON value');
+  const dataStr = rawData as string | undefined;
+  const rawOutput = args['output'];
+  if (rawOutput === true) throw new Error('--output requires a path');
+  const output = rawOutput as string | undefined;
+  const jsonOutput = !!args['json'];
+
+  if (!dataStr) {
+    throw new Error('--data=<json_envelope> is required');
+  }
+
+  // Connect to the Mail daemon to perform IBE decryption
+  const envelope = parseEncryptedMessageEnvelope(dataStr);
+  const principal = session.getPrincipal();
+  const derivationId = `${principal}:Mail`;
+  if (envelope.ibe_id !== derivationId) {
+    throw new Error(
+      `Envelope is addressed to "${envelope.ibe_id}", but current recipient is "${derivationId}"`,
+    );
+  }
+  verifyEnvelopeSignature(envelope);
+  const sockPath = findRunningDaemon(derivationId);
+
+  // Send ibe-decrypt RPC to daemon
+  const response = await sendRpcToSocket(sockPath, {
+    id: 1,
+    method: 'ibe-decrypt',
+    params: {
+      ibe_identity: envelope.ibe_id,
+      ciphertext_base64: envelope.ct,
+    },
+  });
+
+  if (response.error) {
+    throw new Error(`Daemon decryption failed: ${response.error}`);
+  }
+
+  const result = response.result as { data_base64: string; plaintext_size: number };
+  if (!result || typeof result.data_base64 !== 'string' || typeof result.plaintext_size !== 'number') {
+    throw new Error('Daemon returned an invalid decrypt result');
+  }
+  const plaintextBytes = decodeBase64Strict(result.data_base64, 'daemon data_base64');
+  if (plaintextBytes.length !== result.plaintext_size) {
+    throw new Error(
+      `Daemon returned mismatched plaintext size: expected ${result.plaintext_size}, got ${plaintextBytes.length}`,
+    );
+  }
+
+  const shouldWriteFile = envelope.payload_type === 'file' || !!output;
+  const resolvedOutput = shouldWriteFile
+    ? (output ?? defaultReceivedPath(envelope))
+    : undefined;
+
+  if (resolvedOutput) {
+    writeFileSync(resolvedOutput, plaintextBytes);
+  }
+
+  if (jsonOutput) {
+    const base = {
+      from: envelope.from,
+      to: envelope.to,
+      payload_type: envelope.payload_type,
+      filename: envelope.filename,
+      ibe_identity: envelope.ibe_id,
+      verified_sender: true,
+      plaintext_size: result.plaintext_size,
+      timestamp: envelope.ts,
+    };
+    if (resolvedOutput) {
+      console.log(JSON.stringify({
+        ...base,
+        output_file: resolvedOutput,
+      }));
+    } else {
+      console.log(JSON.stringify({
+        ...base,
+        plaintext: plaintextBytes.toString('utf-8'),
+      }));
+    }
+  } else if (resolvedOutput) {
+    console.log('Decrypted message:');
+    console.log(`  From:         ${envelope.from}`);
+    console.log(`  To:           ${envelope.to}`);
+    console.log(`  Identity:     ${envelope.ibe_id}`);
+    console.log(`  Verified:     yes`);
+    console.log(`  Payload Type: ${envelope.payload_type}`);
+    if (envelope.filename) {
+      console.log(`  File Name:    ${envelope.filename}`);
+    }
+    console.log(`  Time:         ${new Date(envelope.ts).toISOString()}`);
+    console.log(`  Size:         ${result.plaintext_size} bytes`);
+    console.log(`  Output File:  ${resolvedOutput}`);
+  } else {
+    console.log('Decrypted message:');
+    console.log(`  From:         ${envelope.from}`);
+    console.log(`  To:           ${envelope.to}`);
+    console.log(`  Identity:     ${envelope.ibe_id}`);
+    console.log(`  Verified:     yes`);
+    console.log(`  Payload Type: ${envelope.payload_type}`);
+    console.log(`  Time:         ${new Date(envelope.ts).toISOString()}`);
+    console.log(`  Size:         ${result.plaintext_size} bytes`);
+    console.log('  Content:');
+    console.log(plaintextBytes.toString('utf-8'));
+  }
+}
+
+function readMessageInput(
+  text: string | boolean | undefined,
+  file: string | boolean | undefined,
+): { plaintext: Uint8Array; payloadType: MessagePayloadType; filename?: string } {
+  if (text && file) throw new Error('Cannot specify both --text and --file');
+  if (text === true) throw new Error("--text requires a value (e.g. --text='hello')");
+  if (file === true) throw new Error('--file requires a path (e.g. --file=./data.txt)');
+
+  if (typeof text === 'string') {
+    const plaintext = new TextEncoder().encode(text);
+    if (plaintext.length > MAX_MSG_PAYLOAD) {
+      throw new Error(`Message too large: ${plaintext.length} bytes (max ${MAX_MSG_PAYLOAD} bytes)`);
+    }
+    return {
+      plaintext,
+      payloadType: 'text',
+    };
+  }
+
+  if (typeof file === 'string') {
+    const stat = statSync(file);
+    if (!stat.isFile()) {
+      throw new Error(`'${file}' is not a regular file`);
+    }
+    if (stat.size > MAX_MSG_PAYLOAD) {
+      throw new Error(`Message too large: ${stat.size} bytes (max ${MAX_MSG_PAYLOAD} bytes)`);
+    }
+    return {
+      plaintext: readFileSync(file),
+      payloadType: 'file',
+      filename: sanitizeFilename(file),
+    };
+  }
+
+  throw new Error('Either --text or --file must be provided');
+}
+
+function parseEncryptedMessageEnvelope(dataStr: string): EncryptedMessageEnvelope {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(dataStr);
+  } catch {
+    throw new Error('Invalid message envelope (expected JSON)');
+  }
+
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Invalid message envelope: expected an object');
+  }
+
+  const envelope = raw as Record<string, unknown>;
+  if (typeof envelope.from !== 'string' || envelope.from.length === 0) {
+    throw new Error('Invalid envelope: from must be a non-empty string');
+  }
+  if (typeof envelope.from_pubkey !== 'string' || envelope.from_pubkey.length === 0) {
+    throw new Error('Invalid envelope: from_pubkey must be a non-empty string');
+  }
+  if (typeof envelope.to !== 'string' || envelope.to.length === 0) {
+    throw new Error('Invalid envelope: to must be a non-empty string');
+  }
+  if (envelope.payload_type !== 'text' && envelope.payload_type !== 'file') {
+    throw new Error('Invalid envelope: payload_type must be "text" or "file"');
+  }
+  if (typeof envelope.ibe_id !== 'string' || envelope.ibe_id.length === 0) {
+    throw new Error('Invalid envelope: ibe_id must be a non-empty string');
+  }
+  if (typeof envelope.ct !== 'string' || envelope.ct.length === 0) {
+    throw new Error('Invalid envelope: ct must be a non-empty string');
+  }
+  if (typeof envelope.ts !== 'number' || !Number.isFinite(envelope.ts) || envelope.ts <= 0) {
+    throw new Error('Invalid envelope: ts must be a positive number');
+  }
+  if (typeof envelope.sig !== 'string' || envelope.sig.length === 0) {
+    throw new Error('Invalid envelope: sig must be a non-empty string');
+  }
+  if (envelope.payload_type === 'file') {
+    if (typeof envelope.filename !== 'string' || envelope.filename.length === 0) {
+      throw new Error('Invalid envelope: filename is required for file payloads');
+    }
+  } else if (envelope.filename !== undefined) {
+    throw new Error('Invalid envelope: filename is only allowed for file payloads');
+  }
+
+  return {
+    from: envelope.from,
+    from_pubkey: envelope.from_pubkey,
+    to: envelope.to,
+    payload_type: envelope.payload_type,
+    filename: envelope.filename as string | undefined,
+    ibe_id: envelope.ibe_id,
+    ct: envelope.ct,
+    ts: envelope.ts,
+    sig: envelope.sig,
+  };
+}
+
+function serializeEnvelopeForSigning(envelope: Omit<EncryptedMessageEnvelope, 'sig'> | EncryptedMessageEnvelope): Uint8Array {
+  const payload = JSON.stringify({
+    from: envelope.from,
+    from_pubkey: envelope.from_pubkey,
+    to: envelope.to,
+    payload_type: envelope.payload_type,
+    filename: envelope.filename,
+    ibe_id: envelope.ibe_id,
+    ct: envelope.ct,
+    ts: envelope.ts,
+  });
+  return new TextEncoder().encode(`${MAIL_SIGNATURE_DOMAIN}\n${payload}`);
+}
+
+function verifyEnvelopeSignature(envelope: EncryptedMessageEnvelope): void {
+  const publicKeyDer = decodeHexStrict(envelope.from_pubkey, 'from_pubkey');
+  const expectedPrincipal = Principal.selfAuthenticating(new Uint8Array(publicKeyDer)).toText();
+  if (expectedPrincipal !== envelope.from) {
+    throw new Error(
+      `Envelope sender mismatch: from="${envelope.from}" does not match from_pubkey principal "${expectedPrincipal}"`,
+    );
+  }
+
+  const signature = decodeBase64Strict(envelope.sig, 'sig');
+  const verify = createVerify('sha256');
+  verify.update(serializeEnvelopeForSigning(envelope));
+  verify.end();
+
+  const publicKey = createPublicKey({
+    key: publicKeyDer,
+    format: 'der',
+    type: 'spki',
+  });
+
+  if (!verify.verify(publicKey, compactSignatureToDer(signature))) {
+    throw new Error('Envelope signature verification failed');
+  }
+}
+
+function defaultReceivedPath(envelope: EncryptedMessageEnvelope): string {
+  const safeName = envelope.payload_type === 'file'
+    ? sanitizeFilename(envelope.filename) ?? 'message.bin'
+    : `message-${envelope.ts}.txt`;
+  return `received_${Date.now()}_${safeName}`;
+}
+
+function sanitizeFilename(filePath: string | undefined): string | undefined {
+  if (!filePath) return undefined;
+  const name = basename(filePath);
+  if (!name || name === '.' || name === '..') {
+    return undefined;
+  }
+  return name;
+}
+
+function compactSignatureToDer(signature: Uint8Array): Buffer {
+  if (signature.length !== 64) {
+    throw new Error(`Invalid signature length: expected 64 bytes, got ${signature.length}`);
+  }
+
+  const encodeInteger = (part: Uint8Array): Buffer => {
+    let start = 0;
+    while (start < part.length - 1 && part[start] === 0) {
+      start += 1;
+    }
+    let value = Buffer.from(part.subarray(start));
+    if ((value[0] ?? 0) & 0x80) {
+      value = Buffer.concat([Buffer.from([0x00]), value]);
+    }
+    return Buffer.concat([Buffer.from([0x02, value.length]), value]);
+  };
+
+  const r = encodeInteger(signature.subarray(0, 32));
+  const s = encodeInteger(signature.subarray(32, 64));
+  const seqLen = r.length + s.length;
+  if (seqLen > 0x7f) {
+    throw new Error('DER signature too long');
+  }
+  return Buffer.concat([Buffer.from([0x30, seqLen]), r, s]);
+}
+
+function decodeBase64Strict(value: string, fieldName: string): Buffer {
+  if (value.length === 0) {
+    return Buffer.alloc(0);
+  }
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    throw new Error(`Invalid ${fieldName}: expected base64`);
+  }
+  return Buffer.from(value, 'base64');
+}
+
+function decodeHexStrict(value: string, fieldName: string): Buffer {
+  if (!/^[0-9a-fA-F]+$/.test(value) || value.length % 2 !== 0) {
+    throw new Error(`Invalid ${fieldName}: expected hex`);
+  }
+  return Buffer.from(value, 'hex');
 }

@@ -24,6 +24,7 @@ vi.mock('../crypto.js', async (importOriginal) => {
     // Mock IBE / transport layer functions (require real @dfinity/vetkeys at runtime)
     generateTransportKeypair: vi.fn(),
     decryptVetkey: vi.fn(),
+    ibeDecryptWithCachedKey: vi.fn(),
   };
 });
 
@@ -180,6 +181,77 @@ describe('KeyStore', () => {
       const ks = KeyStore.createForTest('test:multi-destroy');
       ks.destroy();
       ks.destroy(); // Should not throw
+    });
+
+    it('should reject ibeDecrypt after destroy', () => {
+      const vetkeyBytes = crypto.randomBytes(48);
+      const dpkBytes = new Uint8Array(96);
+      const ks = KeyStore.createForTestWithIbe('test:ibe-destroy', vetkeyBytes, dpkBytes);
+      ks.destroy();
+      expect(() => ks.ibeDecrypt('test:Mail', Buffer.from('ct'))).toThrow('destroyed');
+    });
+  });
+
+  // ==========================================================================
+  // IBE support (Mail daemon mode)
+  // ==========================================================================
+
+  describe('IBE support', () => {
+    it('should report hasIbeSupport=false for createForTest (no VetKey cached)', () => {
+      const ks = KeyStore.createForTest('test:no-ibe');
+      expect(ks.hasIbeSupport).toBe(false);
+      ks.destroy();
+    });
+
+    it('should report hasIbeSupport=true for createForTestWithIbe', () => {
+      const vetkeyBytes = crypto.randomBytes(48);
+      const dpkBytes = new Uint8Array(96);
+      const ks = KeyStore.createForTestWithIbe('test:ibe', vetkeyBytes, dpkBytes);
+      expect(ks.hasIbeSupport).toBe(true);
+      ks.destroy();
+    });
+
+    it('should throw when ibeDecrypt called without IBE support', () => {
+      const ks = KeyStore.createForTest('test:no-ibe');
+      expect(() => ks.ibeDecrypt('test:Mail', Buffer.from('ct')))
+        .toThrow('does not have cached VetKey');
+      ks.destroy();
+    });
+
+    it('should delegate to ibeDecryptWithCachedKey', () => {
+      const vetkeyBytes = crypto.randomBytes(48);
+      const dpkBytes = new Uint8Array(96);
+      const plaintext = Buffer.from('decrypted message');
+
+      vi.mocked(cryptoOps.ibeDecryptWithCachedKey).mockReturnValue(
+        new Uint8Array(plaintext),
+      );
+
+      const ks = KeyStore.createForTestWithIbe('test:ibe', vetkeyBytes, dpkBytes);
+      const result = ks.ibeDecrypt('test:Mail', Buffer.from('fake-ciphertext'));
+
+      expect(cryptoOps.ibeDecryptWithCachedKey).toHaveBeenCalledWith(
+        vetkeyBytes,
+        dpkBytes,
+        'test:Mail',
+        Buffer.from('fake-ciphertext'),
+      );
+      expect(result.toString('utf-8')).toBe('decrypted message');
+
+      ks.destroy();
+    });
+
+    it('should clear VetKey bytes on destroy', () => {
+      const vetkeyBytes = Buffer.alloc(48, 0xab);
+      const dpkBytes = new Uint8Array(96);
+      const ks = KeyStore.createForTestWithIbe('test:ibe-zero', vetkeyBytes, dpkBytes);
+
+      expect(ks.hasIbeSupport).toBe(true);
+      ks.destroy();
+      expect(ks.hasIbeSupport).toBe(false);
+
+      // VetKey buffer should be zeroed
+      expect(vetkeyBytes.every(b => b === 0)).toBe(true);
     });
   });
 });

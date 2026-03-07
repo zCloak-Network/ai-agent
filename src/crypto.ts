@@ -18,6 +18,7 @@ import {
   TransportSecretKey,
   DerivedPublicKey,
   EncryptedVetKey,
+  VetKey,
   IbeCiphertext,
   IbeIdentity,
   IbeSeed,
@@ -132,6 +133,42 @@ export function ibeDecrypt(
   } catch (e) {
     throw decryptionError(
       `IBE decrypt failed: ${e instanceof Error ? e.message : String(e)}`,
+      e,
+    );
+  }
+}
+
+/**
+ * IBE-decrypt ciphertext using a cached (already-decrypted) VetKey.
+ *
+ * Used by Mail daemon mode: the VetKey is derived once at startup and
+ * cached in KeyStore. Subsequent decryptions skip the canister call
+ * and transport-decryption step entirely.
+ *
+ * @param vetkeyBytes - Raw VetKey bytes (48 bytes, compressed G1 point)
+ * @param dpkBytes - IBE derived public key (96 bytes)
+ * @param ibeIdentity - IBE identity string used during encryption
+ * @param ciphertextBytes - IBE ciphertext
+ * @returns Decrypted plaintext
+ */
+export function ibeDecryptWithCachedKey(
+  vetkeyBytes: Uint8Array,
+  _dpkBytes: Uint8Array,
+  _ibeIdentity: string,
+  ciphertextBytes: Uint8Array,
+): Uint8Array {
+  try {
+    // Reconstruct VetKey from cached raw bytes.
+    // The VetKey was already verified during the initial derive_vetkey + decryptAndVerify
+    // step at daemon startup, so no re-verification is needed here.
+    const vetKey = VetKey.deserialize(vetkeyBytes);
+
+    // IBE-decrypt the ciphertext
+    const ibeCiphertext = IbeCiphertext.deserialize(ciphertextBytes);
+    return ibeCiphertext.decrypt(vetKey);
+  } catch (e) {
+    throw decryptionError(
+      `IBE decrypt (cached key) failed: ${e instanceof Error ? e.message : String(e)}`,
       e,
     );
   }
