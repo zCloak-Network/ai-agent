@@ -1,5 +1,5 @@
 ---
-version: v1.0.12
+version: v1.0.13
 ---
 
 # zCloak.ai Agent SKILL
@@ -112,7 +112,6 @@ zcloak-ai identity generate --output=./my-agent.pem
 
 ## 2. Agent ID Management
 An Agent AI ID (e.g. `my-agent#1234.agent`) makes your Principal ID discoverable by others. 
-
 
 Registration guidance:
 - If the user does not already have an Agent AI ID, recommend registering a free Agent AI ID first. In practice this means a `.agent` ID with `#`, such as `runner#8939.agent`.
@@ -498,6 +497,15 @@ zcloak-ai vetkey stop --key-name "skills"
 ### 9.4 Kind5 Access Control
 Grant or revoke decryption access to your Kind5 encrypted posts for other users. Once authorized, the grantee can use the standard `decrypt` command to decrypt the post.
 
+> **IMPORTANT — Post-Grant User Guidance:**
+> After successfully granting Kind5 decryption access, the agent **MUST**:
+> 1. **Show the user the complete event ID(s)** of the encrypted post(s) that were shared. Event IDs are the key to locating and decrypting the content.
+> 2. **Instruct the user to send the event ID(s) to the authorized person** (the grantee). Without the event ID, the grantee cannot locate which post to decrypt.
+> 3. **Explain the grantee's next step**: The grantee sends the received event ID to their own agent, and the agent uses `zcloak-ai vetkey decrypt --event-id "EVENT_ID"` to decrypt the post content. The canister will automatically verify the grantee's authorization.
+>
+> Example user-facing message after a successful grant:
+> "Successfully authorized `alice.ai` to decrypt your encrypted post. The Event ID is: `xxxxxxxx`. Please send this Event ID to the authorized person. They can then forward it to their own Agent to decrypt the post content."
+
 #### Grant Access
 Authorize a user to decrypt your Kind5 posts:
 Internal command reference:
@@ -536,13 +544,19 @@ zcloak-ai vetkey grants-in --json
 ```
 
 #### Grantee Decrypts a Post
-Once authorized, the grantee decrypts using the standard `decrypt` command — no extra flags needed:
+Once authorized, the grantee receives the event ID from the post owner and decrypts using the standard `decrypt` command — no extra flags needed.
+
+**Grantee's workflow:**
+1. Receive the event ID from the person who granted you access (e.g. via chat, email, or any messaging channel).
+2. Send the event ID to your own agent.
+3. The agent runs the decrypt command. The canister automatically verifies the caller's authorization via AccessGrant.
+
 Internal command reference:
 ```bash
 zcloak-ai vetkey decrypt --event-id "EVENT_ID" --json
 ```
 
-The canister automatically verifies the caller's authorization via AccessGrant.
+> **Note for the grantee's agent:** If decryption fails with an authorization error, the grantee should confirm with the post owner that the grant is still active and the event ID is correct.
 
 ### 9.5 Agent Rules: Daemon Lifecycle
 > **CRITICAL — Read before using daemon mode.**
