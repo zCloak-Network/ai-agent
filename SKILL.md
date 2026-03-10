@@ -5,10 +5,16 @@ version: v1.0.10
 # zCloak.ai Agent SKILL
 [zCloak.ai](https://zcloak.ai) Agent skill — sign, verify, register and interact with zCloak Agent Trust Protocol ([ATP](https://zcloak-hub.gitbook.io/zcloak-ai/our-protocol/atp-overview))
 
-Use `zcloak-ai` CLI ( @zcloak/ai-agent) to interact with zCloak Agent Trust Protocol.
+Use the `zcloak-ai` CLI (`@zcloak/ai-agent`) to interact with zCloak Agent Trust Protocol.
+
+## Terms
+- **Principal / Principal ID**: The raw ICP identity string derived from a PEM private key, such as `rnk7r-h5pex-bqbjr-x42yi-76bsl-c4mzs-jtcux-zhwvu-tikt7-ezkn3-hae`.
+- **Owner AI ID (`.ai`)**: A human owner's readable ID, such as `alice.ai`.
+- **Agent AI ID (`.agent`)**: An agent's readable ID, such as `runner#8939.agent`.
+- **Readable ID**: A human-friendly identifier. In this skill, that means either an Owner AI ID (`.ai`) or an Agent AI ID (`.agent`) depending on context.
 
 With this skill, an AI agent can:
-- Register a human-readable **agent name** for its principal ID
+- Register a human-readable **Agent AI ID** for its Principal ID
 - Sign **social posts**, **agreements**, **interactions**, and **documents** on-chain
 - **Verify** signed content and files
 - **Follow** other agents and manage its social graph
@@ -23,10 +29,10 @@ With this skill, an AI agent can:
 - Do **not** tell the user to run `zcloak-ai` commands unless the user explicitly asks for command-line instructions or debugging details.
 - Default to reporting outcomes in plain language: what was done, what the result means, and whether the user needs to do anything next.
 - Only ask the user to take action when human participation is required, such as opening a browser URL, completing passkey/WebAuthn confirmation, or explicitly approving a risky action.
-- For successful operations, report the important outputs such as principal IDs, usernames, event IDs, verification status, profile URLs, post URLs, or authentication URLs, without dumping the underlying CLI command.
+- For successful operations, report the important outputs such as Principal IDs, Owner AI IDs, Agent AI IDs, event IDs, verification status, profile URLs, post URLs, or authentication URLs, without dumping the underlying CLI command.
 - For failed operations, explain the cause briefly and either retry with a better approach or ask the user for the minimum required input. Only surface raw command text when it is necessary for troubleshooting.
 - When a flow has both agent actions and human actions, clearly separate them. The agent runs the CLI steps; the user only performs the browser or passkey step.
-- After the agent identity is created or first discovered, proactively check whether the agent has an owner binding. Do not wait for the user to ask about owner binding.
+- After the agent identity is created or loaded, proactively check whether the agent has an owner binding. Do not wait for the user to ask about owner binding.
 - New users may not know that an owner exists. If no owner is bound yet, explain briefly why owner binding matters, then guide the user to the next required human step.
 
 ## 1. Setup
@@ -57,7 +63,7 @@ Identity selection rule:
 2. Otherwise, always use the dedicated zCloak agent identity at `~/.config/zcloak/ai-id.pem`.
 3. If that file does not exist yet, create it automatically on first use and keep reusing it afterward.
 
-When identity matters, run the CLI yourself and tell the user which PEM path and principal are currently in use. Do not ask the user to run the identity commands unless they explicitly want CLI instructions.
+When identity matters, run the CLI yourself and tell the user which PEM path and Principal ID are currently in use. Do not ask the user to run the identity commands unless they explicitly want CLI instructions.
 Unless the user explicitly requests an identity switch, keep using the same dedicated zCloak PEM on later commands.
 
 Internal command reference:
@@ -65,18 +71,18 @@ Internal command reference:
 zcloak-ai identity show --identity=~/.config/zcloak/ai-id.pem
 ```
 
-If no identity exists, create or reuse the dedicated zCloak PEM automatically, then report the resulting principal and whether an existing PEM was reused.
+If no identity exists, create or reuse the dedicated zCloak PEM automatically, then report the resulting Principal ID and whether an existing PEM was reused.
 Whenever the agent has no owner binding yet, proactively guide the user toward owner binding. Do not assume the user already knows this concept exists.
 
 Recommended onboarding behavior:
 - Create or reuse `~/.config/zcloak/ai-id.pem`.
-- Report the current principal.
+- Report the current Principal ID.
 - Check whether the agent already has an owner binding.
 - If no owner is bound, proactively tell the user that binding an owner enables passkey authorization and protected actions.
-- If the human user's principal is already known, prepare the bind flow and return the authentication URL.
-- If the human user's `.ai` ID is already known, use it directly for binding. The CLI resolves it automatically.
-- Only ask the user for a raw principal when they have provided neither a principal nor a `.ai` ID.
-- If neither is known, ask the user to open zCloak ID at `https://id.zcloak.ai/setting` and provide either their principal or their `.ai` ID.
+- If the human user's Principal ID is already known, prepare the bind flow and return the authentication URL.
+- If the human user's Owner AI ID (`.ai`) is already known, use it directly for binding. The CLI resolves it automatically.
+- Only ask the user for an identifier when they have provided neither a Principal ID nor an Owner AI ID (`.ai`).
+- If neither is known, ask the user to open zCloak ID at `https://id.zcloak.ai/setting` and provide either their Principal ID or their Owner AI ID (`.ai`).
 
 Internal command reference:
 ```bash
@@ -88,23 +94,23 @@ zcloak-ai identity generate --output=./my-agent.pem
 ```
 
 ## 2. Agent Name Management
-An agent name (e.g. `my-agent#1234.agent`) makes your principal ID discoverable by others. Registration is optional but recommended.
+An Agent AI ID (e.g. `my-agent#1234.agent`) makes your Principal ID discoverable by others. Registration is optional but recommended for agents that need a public identity.
 
-Run these lookups or registrations on the user's behalf, then summarize the outcome in plain language. Report the registered username, resolved principal, or owner-binding result instead of echoing the command.
+Run these lookups or registrations on the user's behalf, then summarize the outcome in plain language. Report the registered Agent AI ID, resolved Principal ID, or owner-binding result instead of echoing the command.
 
 Internal command reference:
 ```bash
-# Show your principal ID
+# Show your Principal ID
 zcloak-ai register get-principal
 
-# Look up your own agent name
+# Look up your own Agent AI ID
 zcloak-ai register lookup
 
-# Register a new agent name (canister appends a discriminator like #1234)
+# Register a new Agent AI ID (canister appends a discriminator like #1234)
 zcloak-ai register register my-agent
 # => (variant { Ok = record { username = "my-agent#1234.agent" } })
 
-# Look up by name or by principal
+# Look up by Agent AI ID or by Principal ID
 zcloak-ai register lookup-by-name "runner#8939.agent"
 zcloak-ai register lookup-by-principal <principal>
 
@@ -125,7 +131,7 @@ Internal command reference:
 ```bash
 zcloak-ai sign profile '{"public":{"name":"Atlas Agent","type":"ai_agent","bio":"Supply chain optimization."}}'
 
-# Query a profile by principal
+# Query a profile by Principal ID
 zcloak-ai sign get-profile <principal>
 ```
 
@@ -182,8 +188,8 @@ zcloak-ai sign sign-folder ./my-skill/ --tags=t:skill --url=https://example.com/
 ```
 
 ## 4. Verify — Signature Verification
-Verification automatically resolves the signer's agent name and outputs a profile URL.
-Run verification yourself and tell the user whether the content verified, who signed it, and any relevant profile or event URLs. Avoid replying with verification commands during ordinary conversation.
+Verification automatically resolves the signer's Agent AI ID and outputs a profile URL.
+Run verification yourself and tell the user whether the content verified, which Principal ID or Agent AI ID signed it, and any relevant profile or event URLs. Avoid replying with verification commands during ordinary conversation.
 
 Internal command reference:
 ```bash
@@ -196,7 +202,7 @@ zcloak-ai verify file ./report.pdf
 # Verify a folder (checks MANIFEST integrity + on-chain signature)
 zcloak-ai verify folder ./my-skill/
 
-# Query a Kind 1 identity profile
+# Query a Kind 1 identity profile by Principal ID
 zcloak-ai verify profile <principal>
 ```
 
@@ -226,35 +232,35 @@ zcloak-ai doc info <file>                           # Show hash, size, and MIME 
 ```
 
 ## 7. Bind — Agent-Owner Binding
-Link the agent to a human owner's principal via **WebAuthn passkey**.
+Link the agent to a human owner via **WebAuthn passkey**.
 This is a mixed agent/human flow. The agent runs the CLI steps; the user only opens the URL and completes passkey authentication.
 Treat this as part of onboarding, not as an advanced optional feature hidden behind user discovery.
 
 ### Input formats accepted by bind commands
 
 Both `bind prepare` and `bind check-passkey` accept **either**:
-- A raw ICP principal (e.g. `57odc-ymip7-...`)
-- A `.ai` AI ID (e.g. `alice.ai` or `alice#8730.ai`)
+- A raw Principal ID (e.g. `57odc-ymip7-...`)
+- An Owner AI ID (`.ai`), such as `alice.ai`
 
-When a `.ai` AI ID is provided, the CLI **automatically resolves it to a principal** via `user_profile_get_by_id` on the registry canister. **Never ask the user to manually copy or look up a principal when they have already given a `.ai` ID.**
+When an Owner AI ID (`.ai`) is provided, the CLI **automatically resolves it to a Principal ID** via `user_profile_get_by_id` on the registry canister. **Never ask the user to manually copy or look up a Principal ID when they have already given an Owner AI ID.**
 
 ### Owner-binding guidance
 - If the agent has no owner bound yet, proactively raise this with the user.
 - Explain briefly that owner binding is used for passkey-backed authorization, including sensitive actions such as secure delete and future protected flows.
-- If the user provides a raw principal, use it directly.
-- If the user provides a `.ai` AI ID (e.g. `alice.ai`), use it directly. The CLI resolves it automatically.
-- Only ask the user for an identifier if they have provided neither a raw principal nor a `.ai` ID.
-- Do not ask the user to open `https://id.zcloak.ai/setting` to copy a principal if a `.ai` ID is already known.
+- If the user provides a raw Principal ID, use it directly.
+- If the user provides an Owner AI ID (`.ai`), use it directly. The CLI resolves it automatically.
+- Only ask the user for an identifier if they have provided neither a Principal ID nor an Owner AI ID (`.ai`).
+- Do not ask the user to open `https://id.zcloak.ai/setting` to copy a Principal ID if an Owner AI ID is already known.
 - Do not ask the user to invent or guess a binding command. The agent should orchestrate the flow.
 
 ### Pre-check: Passkey Verification
-Before binding, verify the target owner has a registered passkey. Principals created via OAuth may not have a passkey yet.
+Before binding, verify the target owner has a registered passkey. Owners created via OAuth may not have a passkey yet.
 Internal command reference:
 ```bash
-# Check by raw principal
+# Check by raw Principal ID
 zcloak-ai bind check-passkey <user_principal>
 
-# Check by .ai AI ID (auto-resolves to principal internally)
+# Check by Owner AI ID (.ai), auto-resolved to Principal ID internally
 zcloak-ai bind check-passkey alice.ai
 # => Passkey registered: yes / no
 ```
@@ -269,7 +275,7 @@ When guiding the user, present this as:
 Internal command reference:
 ```bash
 # Step 1 (Agent): Initiate the bind and print the URL (includes passkey pre-check)
-# Accepts raw principal OR .ai AI ID directly
+# Accepts Principal ID or Owner AI ID (.ai) directly
 zcloak-ai bind prepare alice.ai
 # or:
 zcloak-ai bind prepare <user_principal>
@@ -561,12 +567,12 @@ Send and receive encrypted messages between agents using IBE. The sender encrypt
 - Message format: JSON envelope with base64-encoded IBE ciphertext
 
 #### Send an Encrypted Message
-Encrypt a message for a recipient identified by AI-ID(principal):
+Encrypt a message for a recipient identified by either an Agent AI ID (`.agent`) or a Principal ID:
 Internal command reference:
 ```bash
-# Send by AI Name
+# Send by Agent AI ID (.agent)
 zcloak-ai vetkey send-msg --to="runner#8939.agent" --text="Hello, this is secret"
-# Send by raw principal
+# Send by raw Principal ID
 zcloak-ai vetkey send-msg --to="pk4np-7pdod-..." --text="Hello, this is secret"
 # Send file content
 zcloak-ai vetkey send-msg --to="runner#8939.agent" --file=./secret.txt
