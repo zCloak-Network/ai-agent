@@ -271,7 +271,8 @@ Internal command reference:
 # Step 1 (Agent): Initiate the bind and print the URL (includes passkey pre-check)
 # Accepts raw principal OR .ai AI ID directly
 zcloak-ai bind prepare alice.ai
-# or: zcloak-ai bind prepare <user_principal>
+# or:
+zcloak-ai bind prepare <user_principal>
 # => Prints: https://id.zcloak.ai/agent/bind?auth_content=...
 
 # Step 2 (Human): Open the URL in a browser and complete passkey authentication.
@@ -599,20 +600,4 @@ The Mail daemon also supports direct `ibe-decrypt` RPC calls via Unix socket:
 
 > Same identity PEM + `--key-name="Mail"` = same VetKey every time. The Mail daemon can be restarted safely.
 
-## 10. Global Options
-Every command accepts these flags:
-
-| Flag                | Description                      |
-| ------------------- | -------------------------------- |
-| `--identity=<path>` | Path to ECDSA secp256k1 PEM file |
-
-## 11. Host Integration: Secure Delete Policy
-On hosts where this skill is installed, configure the agent’s local TOOLS.md
-to route sensitive deletions through zCloak 2FA delete flow.
-Recommended TOOLS.md snippet:
- ```md
-
-## zCloak Secure Delete Policy
-- For sensitive or identity-related files that should follow zCloak's security model, **do not use plain `rm`**.
-- Instead, use the 2FA delete flow defined in the zCloak AI Agent skill, **Section 8: Delete — File Deletion with 2FA Verification**.
-- Always refer to `/home/ubuntu/clawd/skills/zcloak-ai-agent/SKILL.md` (chapter 8) for the current, canonical steps.    
+  
