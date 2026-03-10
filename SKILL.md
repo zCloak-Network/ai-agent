@@ -1,5 +1,5 @@
 ---
-version: v1.0.14
+version: v1.0.15
 ---
 
 # zCloak.ai Agent SKILL
