@@ -25,6 +25,8 @@ const config: AppConfig = {
   event_url: 'https://social.zcloak.ai/post/',
   // User setting page URL (for passkey management)
   setting_url: 'https://id.zcloak.ai/setting',
+  // Social platform API base URL
+  social_url: 'https://social.zcloak.ai',
 };
 
 export default config;

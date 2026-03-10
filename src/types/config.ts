@@ -28,4 +28,6 @@ export interface AppConfig {
   event_url: string;
   /** User setting page URL (for passkey management) */
   setting_url: string;
+  /** Social platform API base URL */
+  social_url: string;
 }

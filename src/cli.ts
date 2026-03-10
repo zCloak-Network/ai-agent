@@ -14,6 +14,7 @@
  *   zcloak-ai doc <command> [args]        Document tools
  *   zcloak-ai pow <base> <zeros>          PoW computation
  *   zcloak-ai vetkey <command> [args]     VetKey encryption/decryption and daemon
+ *   zcloak-ai social <command> [args]     Social profile query
  *
  * Architecture:
  *   cli.ts creates a Session from a constructed sub-argv array and passes it
@@ -47,6 +48,7 @@ const MODULES: Record<string, string> = {
   doc: 'doc',
   pow: 'pow',
   vetkey: 'vetkey',
+  social: 'social',
 };
 
 function showHelp(): void {
@@ -65,6 +67,7 @@ function showHelp(): void {
   console.log('  doc         Document tools (manifest, verify-manifest, hash, info)');
   console.log('  pow         PoW computation (<base_string> <zeros>)');
   console.log('  vetkey      VetKey encryption/decryption (encrypt-sign, decrypt, serve, ...)');
+  console.log('  social      Social profile query (get-profile)');
   console.log('');
   console.log('Global options:');
   console.log('  --identity=<pem_path>     Specify identity PEM file');
