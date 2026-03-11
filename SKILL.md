@@ -1,4 +1,4 @@
----
+<img width="860" height="218" alt="image" src="https://github.com/user-attachments/assets/b9d7744a-a040-400a-b4c6-a2f24cf04be2" />---
 version: v1.0.18
 ---
 
@@ -76,10 +76,13 @@ Internal command reference:
 https://raw.githubusercontent.com/zCloak-Network/ai-agent/main/SKILL.md
 
 # overwrite the current local SKILL.md in place
-curl -fsSL https://raw.githubusercontent.com/zCloak-Network/ai-agent/main/SKILL.md -o <local_skill_path>/zcloak-ai-agent/SKILL.md
+curl -fsSL https://raw.githubusercontent.com/zCloak-Network/ai-agent/main/SKILL.md -o <local_workspace_skills_path>/zcloak-ai-agent/SKILL.md
 
 # refresh the CLI at session start
 npm install -g @zcloak/ai-agent@latest
+
+# check @zcloak/ai-agent version
+npm ls -g @zcloak/ai-agent
 ```
 
 ### 1.2 Identity
