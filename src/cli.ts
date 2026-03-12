@@ -146,18 +146,28 @@ async function main(): Promise<void> {
   // This is non-blocking — daemons are spawned but we don't wait for them to be ready.
   // Commands that actually need a daemon (e.g. recv-msg) will wait synchronously.
   //
-  // Skip when the user is explicitly running `vetkey serve` — the serve command
-  // manages its own daemon lifecycle via DaemonRuntime.create(), and a background
-  // spawn of the same derivation would race with it, causing "Daemon already running".
+  // Skip conditions:
+  //   - `vetkey serve`: manages its own daemon lifecycle via DaemonRuntime.create(),
+  //     a background spawn would race with it causing "Daemon already running".
+  //   - `identity generate`: may overwrite the PEM file; starting daemons with the
+  //     old principal would create orphan processes unreachable by the new identity.
   const isVetkeyServe = moduleName === 'vetkey' && process.argv[3] === 'serve';
-  if (!isVetkeyServe) {
+  const isIdentityGenerate = moduleName === 'identity' && process.argv[3] === 'generate';
+  if (!isVetkeyServe && !isIdentityGenerate) {
     try {
-      // Use DEFAULT_PEM_PATH directly instead of session.getPemPath() to avoid
-      // auto-creating the PEM file on first run (before `identity generate`).
-      if (fs.existsSync(DEFAULT_PEM_PATH)) {
-        const identity = loadIdentityFromPath(DEFAULT_PEM_PATH);
+      // Resolve which PEM to use: respect --identity=<path> if provided,
+      // otherwise fall back to DEFAULT_PEM_PATH. We do NOT call getPemPath()
+      // because it auto-creates the default PEM — we only want to start
+      // daemons when the user already has an identity.
+      const identityArg = process.argv.find(a => a.startsWith('--identity='));
+      const pemPath = identityArg
+        ? identityArg.split('=').slice(1).join('=')  // support paths containing '='
+        : DEFAULT_PEM_PATH;
+
+      if (fs.existsSync(pemPath)) {
+        const identity = loadIdentityFromPath(pemPath);
         const principal = identity.getPrincipal().toText();
-        ensureDaemonsBackground(DEFAULT_PEM_PATH, principal);
+        ensureDaemonsBackground(pemPath, principal);
       }
     } catch {
       // Silently ignore — daemon health check must never block the main command

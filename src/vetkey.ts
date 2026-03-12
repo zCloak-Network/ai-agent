@@ -25,11 +25,12 @@
  */
 
 import { readFileSync, statSync, writeFileSync, existsSync, mkdirSync, openSync, closeSync } from 'fs';
-import { basename } from 'path';
+import { basename, dirname } from 'path';
 import { createConnection } from 'net';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
 import { createHash } from 'crypto';
 import { Principal } from '@dfinity/principal';
@@ -41,6 +42,15 @@ import { KeyStore } from './key-store.js';
 import { runDaemonUds, runDaemonStdio } from './serve.js';
 import { findRunningDaemon, isDaemonAlive, socketPath } from './daemon.js';
 import { ToolError, canisterCallError } from './error.js';
+
+/**
+ * Absolute path to cli.js (the CLI entry script).
+ * Used by spawnDaemonBackground() to spawn daemon child processes via
+ * `process.execPath` (the current Node binary) + this script path, so that
+ * daemon spawning works regardless of how the CLI was invoked (global install,
+ * npx, node dist/cli.js, etc.).
+ */
+const CLI_ENTRY_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'cli.js');
 
 // ============================================================================
 // Module Entry Point
@@ -573,15 +583,20 @@ function spawnDaemonBackground(pemPath: string, keyName: string): number | undef
   }
 
   try {
-    const child = spawn('zcloak-ai', [
+    // Use process.execPath (current Node binary) + CLI_ENTRY_SCRIPT (absolute
+    // path to cli.js) instead of 'zcloak-ai'. This ensures daemon spawning
+    // works regardless of how the CLI was invoked (global install, npx, or
+    // direct `node dist/cli.js`), avoiding ENOENT when 'zcloak-ai' is not on PATH.
+    const child = spawn(process.execPath, [
+      CLI_ENTRY_SCRIPT,
       'vetkey', 'serve', `--key-name=${keyName}`, `--identity=${pemPath}`,
     ], {
       detached: true,
       stdio: ['ignore', 'ignore', logFd],
     });
 
-    // Must listen for 'error' to prevent unhandled ENOENT from crashing the
-    // parent process (e.g. when 'zcloak-ai' is not on PATH).
+    // Must listen for 'error' to prevent unhandled exceptions from crashing
+    // the parent process.
     child.on('error', () => { /* swallow — best effort spawn */ });
 
     child.unref();
