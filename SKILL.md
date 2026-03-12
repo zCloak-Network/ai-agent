@@ -645,14 +645,15 @@ Without `nohup` or a process manager, the daemon will be killed by SIGHUP when t
 - Maximum file size: 1 GB
 - VetKey uses BLS12-381 — key derivation via blockchain consensus (no single point of trust)
 
-### 9.8 Encrypted Messaging (Mail Mode)
-Send and receive encrypted messages between agents using IBE. The sender encrypts for the recipient's Mail identity (`{principal}:Mail`), and the recipient's Mail daemon decrypts locally.
+### 9.8 Encrypted Messaging (Mail Mode — Kind17 Envelope)
+Send and receive encrypted messages between agents using IBE, compatible with the zMail protocol (Kind 17 envelope format).
 
 **Key properties:**
 - Sender only needs the IBE public key (no key exchange, no recipient key pair needed)
 - Recipient starts a Mail daemon once; all subsequent decryptions are instant
 - Maximum payload: 64 KB
-- Message format: JSON envelope with base64-encoded IBE ciphertext
+- Message format: Kind 17 envelope (Nostr-inspired) with BIP-340 Schnorr signature
+- Envelope ID: SHA-256 of canonical serialization `[0, ai_id, created_at, 17, tags, content]`
 
 #### Send an Encrypted Message
 Encrypt a message for a recipient identified by either an Agent AI ID (`.agent`) or a Principal ID:
@@ -666,12 +667,20 @@ zcloak-ai vetkey send-msg --to="pk4np-7pdod-..." --text="Hello, this is secret"
 zcloak-ai vetkey send-msg --to="runner#8939.agent" --file=./secret.txt
 ```
 
-Output: JSON envelope ready for transport:
+Output: Kind17 envelope JSON ready for zMail transport:
 ```json
-{"from":"<sender_principal>","from_pubkey":"<hex-der>","to":"runner#8939.agent","payload_type":"text","ibe_id":"{principal}:Mail","ct":"<base64>","ts":1709827200000,"sig":"<base64>"}
+{
+  "id": "<sha256-hex>",
+  "kind": 17,
+  "ai_id": "<sender_principal>",
+  "created_at": 1709827200,
+  "tags": [["to","<recipient_principal>"],["payload_type","text"],["ibe_id","{principal}:Mail"]],
+  "content": "<base64-ibe-ciphertext>",
+  "sig": "<schnorr-sig-hex>"
+}
 ```
 
-File payloads use `"payload_type":"file"` and include `"filename":"secret.txt"`.
+File payloads include an additional `["filename","secret.txt"]` tag.
 
 #### Receive (Decrypt) a Message
 Requires a running Mail daemon (`key-name="Mail"`):
@@ -679,11 +688,11 @@ Internal command reference:
 ```bash
 # Start Mail daemon (one-time, derives VetKey for {principal}:Mail)
 nohup zcloak-ai vetkey serve --key-name "Mail" 2>~/.vetkey-tool/mail-daemon.log &
-# Decrypt a received message envelope
-zcloak-ai vetkey recv-msg --data='{"from":"...","from_pubkey":"...","to":"...","payload_type":"text","ibe_id":"...","ct":"...","ts":...,"sig":"..."}' --json
+# Decrypt a received Kind17 envelope
+zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,"ai_id":"...","created_at":...,"tags":[["to","..."]],"content":"...","sig":"..."}' --json
 
 # For file payloads, write the decrypted bytes to a path
-zcloak-ai vetkey recv-msg --data='{"from":"...","from_pubkey":"...","to":"...","payload_type":"file","filename":"secret.txt","ibe_id":"...","ct":"...","ts":...,"sig":"..."}' --output=./secret.txt
+zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,...}' --output=./secret.txt
 ```
 
 #### Mail Daemon JSON-RPC

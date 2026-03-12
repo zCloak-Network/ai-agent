@@ -2,11 +2,12 @@
  * Tests for vetkey.ts encrypted messaging commands (send-msg / recv-msg).
  *
  * Covers:
- * 1. Signed envelope generation for text/file payloads
+ * 1. Kind17 envelope generation with Schnorr signature for text/file payloads
  * 2. File payload decryption writes bytes to disk instead of UTF-8 coercion
- * 3. Envelope signature verification before daemon access
+ * 3. Envelope ID integrity verification before daemon access
  */
 
+import { createHash } from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -133,7 +134,7 @@ describe('vetkey encrypted messaging', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('send-msg emits a signed envelope for text payloads', async () => {
+  it('send-msg emits a Kind17 signed envelope for text payloads', async () => {
     const sender = Secp256k1KeyIdentity.generate();
     const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
     const session = mockSession(
@@ -145,14 +146,30 @@ describe('vetkey encrypted messaging', () => {
     await run(session);
 
     const envelope = readLastJsonLog();
-    expect(envelope.v).toBeUndefined();
-    expect(envelope.from).toBe(sender.getPrincipal().toText());
-    expect(envelope.from_pubkey).toBe(Buffer.from(sender.getPublicKey().toDer()).toString('hex'));
-    expect(envelope.payload_type).toBe('text');
-    expect(envelope.filename).toBeUndefined();
-    expect(envelope.ibe_id).toBe(`${recipient}:Mail`);
+    // Kind17 envelope structure
+    expect(envelope.kind).toBe(17);
+    expect(envelope.ai_id).toBe(sender.getPrincipal().toText());
+    expect(typeof envelope.id).toBe('string');
+    expect((envelope.id as string).length).toBe(64); // SHA-256 hex
+    expect(typeof envelope.created_at).toBe('number');
+    expect(typeof envelope.content).toBe('string');
+    expect((envelope.content as string).length).toBeGreaterThan(0);
     expect(typeof envelope.sig).toBe('string');
     expect((envelope.sig as string).length).toBeGreaterThan(0);
+
+    // Tags carry recipient, metadata, and sender's SPKI for verification
+    const tags = envelope.tags as string[][];
+    expect(tags).toEqual(expect.arrayContaining([
+      ['to', recipient],
+      ['payload_type', 'text'],
+      ['ibe_id', `${recipient}:Mail`],
+      ['from_pubkey', Buffer.from(sender.getPublicKey().toDer()).toString('hex')],
+    ]));
+
+    // Old top-level fields should not exist
+    expect(envelope.from).toBeUndefined();
+    expect(envelope.ct).toBeUndefined();
+    expect(envelope.ts).toBeUndefined();
   });
 
   it('send-msg rejects invalid raw principal recipients', async () => {
@@ -225,7 +242,7 @@ describe('vetkey encrypted messaging', () => {
     });
   });
 
-  it('recv-msg rejects a tampered envelope signature before talking to the daemon', async () => {
+  it('recv-msg rejects a tampered envelope before talking to the daemon', async () => {
     const sender = Secp256k1KeyIdentity.generate();
     const recipient = Secp256k1KeyIdentity.generate();
     const recipientPrincipal = recipient.getPrincipal().toText();
@@ -238,7 +255,8 @@ describe('vetkey encrypted messaging', () => {
 
     await run(sendSession);
     const envelope = readLastJsonLog();
-    envelope.ct = 'AAAA';
+    // Tamper with the content — ID will no longer match
+    envelope.content = 'AAAA';
 
     mockLog.mockClear();
     lastSocketRequest = undefined;
@@ -249,7 +267,50 @@ describe('vetkey encrypted messaging', () => {
       recipient,
     );
 
-    await expect(run(recvSession)).rejects.toThrow('Envelope signature verification failed');
+    await expect(run(recvSession)).rejects.toThrow('Envelope ID mismatch');
+    expect(lastSocketRequest).toBeUndefined();
+  });
+
+  it('recv-msg rejects a forged ai_id even with recomputed id', async () => {
+    const attacker = Secp256k1KeyIdentity.generate();
+    const victim = Secp256k1KeyIdentity.generate();
+    const recipient = Secp256k1KeyIdentity.generate();
+    const recipientPrincipal = recipient.getPrincipal().toText();
+
+    // Attacker sends a message, gets a valid envelope signed by their key
+    const attackSession = mockSession(
+      ['send-msg'],
+      { to: recipientPrincipal, text: 'trust me' },
+      attacker,
+    );
+
+    await run(attackSession);
+    const envelope = readLastJsonLog();
+
+    // Attacker replaces ai_id with the victim's principal and recomputes the ID
+    // to bypass the ID integrity check. But from_pubkey tag still points to attacker's key.
+    envelope.ai_id = victim.getPrincipal().toText();
+    const payload = [
+      0,
+      envelope.ai_id,
+      envelope.created_at,
+      17,
+      envelope.tags,
+      envelope.content,
+    ];
+    envelope.id = createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex');
+
+    mockLog.mockClear();
+    lastSocketRequest = undefined;
+
+    const recvSession = mockSession(
+      ['recv-msg'],
+      { data: JSON.stringify(envelope) },
+      recipient,
+    );
+
+    // Verification must catch the mismatch between from_pubkey (attacker) and ai_id (victim)
+    await expect(run(recvSession)).rejects.toThrow('Sender identity mismatch');
     expect(lastSocketRequest).toBeUndefined();
   });
 

@@ -39,7 +39,7 @@ afterEach(() => {
 function mockRegistryActor(overrides: Record<string, unknown> = {}) {
   return {
     prepare_2fa_info: vi.fn().mockResolvedValue({
-      Ok: JSON.stringify({ publicKey: { challenge: 'test-challenge-abc' } }),
+      Ok: 'test-challenge-abc',
     }),
     query_2fa_result_by_challenge: vi.fn().mockResolvedValue([]),
     ...overrides,
@@ -91,7 +91,7 @@ describe('delete prepare command', () => {
 
     // Should output URL
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('=== 2FA Authentication URL ==='));
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining(`${config.twofa_url}?auth_content=`));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('https://id.zcloak.ai/agent/2fa?challenge='));
   });
 
   it('exits with error when file path is missing', async () => {

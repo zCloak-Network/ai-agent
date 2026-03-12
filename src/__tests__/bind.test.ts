@@ -94,7 +94,7 @@ describe('bind check-passkey command', () => {
     const session = mockSession(['check-passkey'], actor);
 
     await expect(run(session)).rejects.toThrow('process.exit called');
-    expect(mockError).toHaveBeenCalledWith('Error: user principal ID is required');
+    expect(mockError).toHaveBeenCalledWith('Error: user principal ID or AI ID is required');
   });
 
   it('exits with error when profile is not found', async () => {
@@ -117,7 +117,7 @@ describe('bind prepare command', () => {
 
     expect(actor.agent_prepare_bond).toHaveBeenCalledWith('user-principal');
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('=== Binding Authentication URL ==='));
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining(`${config.bind_url}?auth_content=`));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('https://id.zcloak.ai/agent/bind?challenge='));
   });
 
   it('exits with error when passkey pre-check fails', async () => {
@@ -133,7 +133,7 @@ describe('bind prepare command', () => {
     const session = mockSession(['prepare'], actor);
 
     await expect(run(session)).rejects.toThrow('process.exit called');
-    expect(mockError).toHaveBeenCalledWith('Error: user principal ID is required');
+    expect(mockError).toHaveBeenCalledWith('Error: user principal ID or AI ID is required');
   });
 
   it('handles canister Err result', async () => {

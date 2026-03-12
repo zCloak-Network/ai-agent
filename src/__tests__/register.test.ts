@@ -73,7 +73,9 @@ describe('register get-principal command', () => {
 describe('register lookup command', () => {
   it('queries agent name for current principal', async () => {
     const actor = mockRegistryActor({
-      get_username_by_principal: vi.fn().mockResolvedValue(['runner#8939.agent']),
+      user_profile_get_by_principal: vi.fn().mockResolvedValue([{
+        ai_profile: [{ ai_name: [{ id: 'runner', index: [8939n], domain: [{ AGENT: null }] }], default_name: [] }],
+      }]),
     });
     const session = mockSession(['lookup'], {
       getAnonymousRegistryActor: vi.fn().mockResolvedValue(actor),
@@ -81,7 +83,7 @@ describe('register lookup command', () => {
 
     await run(session);
 
-    expect(actor.get_username_by_principal).toHaveBeenCalledWith('abc-def-principal');
+    expect(actor.user_profile_get_by_principal).toHaveBeenCalledWith('abc-def-principal');
     expect(mockLog).toHaveBeenCalledWith('(opt "runner#8939.agent")');
     // Should also show the profile URL when agent name is found
     expect(mockLog).toHaveBeenCalledWith('View profile: https://id.zcloak.ai/profile/runner%238939.agent');
@@ -119,7 +121,7 @@ describe('register lookup-by-name command', () => {
     const session = mockSession(['lookup-by-name']);
 
     await expect(run(session)).rejects.toThrow('process.exit called');
-    expect(mockError).toHaveBeenCalledWith('Error: agent name is required');
+    expect(mockError).toHaveBeenCalledWith('Error: name is required');
   });
 });
 
