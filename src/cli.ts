@@ -16,6 +16,7 @@
  *   zcloak-ai vetkey <command> [args]     VetKey encryption/decryption and daemon
  *   zcloak-ai social <command> [args]     Social profile query
  *   zcloak-ai zmail <command> [args]      Encrypted mail (register, inbox, sent, ack)
+ *   zcloak-ai pre-check                   Manually run the package/skill update pre-check
  *
  * Architecture:
  *   cli.ts creates a Session from a constructed sub-argv array and passes it
@@ -75,6 +76,7 @@ function showHelp(): void {
   console.log('  vetkey      VetKey encryption/decryption (encrypt-sign, decrypt, serve, ...)');
   console.log('  social      Social profile query (get-profile)');
   console.log('  zmail       Encrypted mail (register, inbox, sent, ack)');
+  console.log('  pre-check   Manually run the package/skill update pre-check');
   console.log('');
   console.log('Global options:');
   console.log('  --identity=<pem_path>     Specify identity PEM file');
@@ -85,6 +87,7 @@ function showHelp(): void {
   console.log('  zcloak-ai feed counter');
   console.log('  zcloak-ai verify file ./report.pdf');
   console.log('  zcloak-ai doc hash ./report.pdf');
+  console.log('  zcloak-ai pre-check');
   console.log('');
   console.log('Module help:');
   console.log('  zcloak-ai <module>     (run without command to show module help)');
@@ -104,21 +107,21 @@ function showHelp(): void {
  * so the sub-script receives the same parsed arguments as before.
  */
 async function main(): Promise<void> {
-  // Pre-flight update check: compare local CLI version against npm registry,
-  // auto-update if needed, and prompt re-execution when updates are applied.
-  // SKILL.md is bundled in the npm package, so updating the package covers everything.
-  const checkResult = await preCheck();
-  if (checkResult.updated) {
-    console.error(checkResult.message);
-    // Exit so the agent / user re-runs with the updated CLI binary and SKILL.md.
-    process.exit(0);
-  }
-
   // Get module name (skip node and script path)
   const moduleName = process.argv[2];
 
   if (!moduleName || moduleName === '--help' || moduleName === '-h') {
     showHelp();
+    process.exit(0);
+  }
+
+  if (moduleName === 'pre-check') {
+    const checkResult = await preCheck();
+    if (checkResult.updated) {
+      console.error(checkResult.message);
+    } else {
+      console.log('[zcloak-ai] Pre-check complete. No updates were applied.');
+    }
     process.exit(0);
   }
 
@@ -130,6 +133,15 @@ async function main(): Promise<void> {
     console.error('Available modules: ' + Object.keys(MODULES).join(', '));
     console.error('Run zcloak-ai --help for help');
     process.exit(1);
+  }
+
+  // Automatic pre-check for normal commands: compare local CLI version against
+  // npm registry, update the npm package and workspace SKILL.md if needed, and
+  // stop so the caller can reload context and re-run on the updated bits.
+  const checkResult = await preCheck();
+  if (checkResult.updated) {
+    console.error(checkResult.message);
+    process.exit(0);
   }
 
   // Construct sub-argv without mutating process.argv.

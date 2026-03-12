@@ -1,5 +1,5 @@
 ---
-version: v1.0.21
+version: v1.0.22
 ---
 
 # zCloak.ai Agent SKILL
@@ -60,6 +60,9 @@ With this skill, an AI agent can:
 Internal command reference:
 ```bash
 npm install -g @zcloak/ai-agent@latest
+
+# Manually trigger the upgrade (update npm package + workspace SKILL.md when a new version exists)
+zcloak-ai pre-check
 ```
 
 ### 1.2 Identity

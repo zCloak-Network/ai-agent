@@ -263,21 +263,23 @@ export async function preCheck(): Promise<PreCheckResult> {
 
   // --- Query npm registry for latest version ---
   const remoteVersion = getNpmLatestVersion();
-  recordCheckTime();
 
   // Query failed → network unreachable; move on
   if (!remoteVersion) {
+    recordCheckTime();
     return { updated: false, message: "" };
   }
 
   // --- Already up-to-date ---
   if (remoteVersion === localVersion) {
+    recordCheckTime();
     return { updated: false, message: "" };
   }
 
   // --- Version mismatch → update both npm package and workspace SKILL.md ---
   updateCli();
   await updateSkill();
+  recordCheckTime();
 
   return {
     updated: true,
@@ -285,7 +287,7 @@ export async function preCheck(): Promise<PreCheckResult> {
       "[zcloak-ai] Version update detected!",
       `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (updated)`,
       `[zcloak-ai] Workspace SKILL.md target: ${WORKSPACE_SKILL_PATH}`,
-      `[zcloak-ai] You must reload the updated ${WORKSPACE_SKILL_PATH}/SKILL.md since it changed and re-run the previous command since package also updated.`,
+      `[zcloak-ai] if updated, tell the user version changed. Also you must reload the updated ${WORKSPACE_SKILL_PATH} and re-run the previous command because of those changes.`,
     ].join("\n"),
   };
 }
