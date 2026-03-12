@@ -30,4 +30,6 @@ export interface AppConfig {
   setting_url: string;
   /** Social platform API base URL */
   social_url: string;
+  /** zMail server API base URL (encrypted mail service) */
+  zmail_url: string;
 }

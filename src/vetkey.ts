@@ -121,7 +121,7 @@ function showHelp(): void {
   console.log('  grants-in       List grants you received (as grantee)');
   console.log('');
   console.log('Encrypted Messaging:');
-  console.log('  send-msg        Encrypt a message for a recipient (IBE)');
+  console.log('  send-msg        Encrypt + auto-deliver via zMail (IBE)');
   console.log('  recv-msg        Decrypt a received message via Mail daemon');
   console.log('');
   console.log('Options:');
@@ -141,6 +141,8 @@ function showHelp(): void {
   console.log('  --grant-id=<id>         Grant ID (for revoke)');
   console.log('  --to=<AI-ID|principal>  Recipient AI-ID or principal (for send-msg)');
   console.log('  --data=<json>           Encrypted message JSON envelope (for recv-msg)');
+  console.log('  --no-zmail              Skip auto-POST to zMail (send-msg only)');
+  console.log('  --zmail-url=<url>       Override zMail server URL');
 }
 
 // ============================================================================
@@ -894,7 +896,7 @@ const MAX_MSG_PAYLOAD = 64 * 1024;
 type MessagePayloadType = 'text' | 'file';
 
 /** Tag entry in a Kind17 envelope: ["to", principal], ["payload_type", "text"], etc. */
-type EnvelopeTag = [string, ...string[]];
+export type EnvelopeTag = [string, ...string[]];
 
 /**
  * Kind 17 envelope for encrypted messages — compatible with zMail protocol.
@@ -904,7 +906,7 @@ type EnvelopeTag = [string, ...string[]];
  * The envelope ID is a SHA-256 hash of the canonical serialization.
  * Signature uses BIP-340 Schnorr over the ID hash.
  */
-interface Kind17Envelope {
+export interface Kind17Envelope {
   /** SHA-256 hash of canonical serialization [0, ai_id, created_at, 17, tags, content] */
   id: string;
   /** Fixed event kind: 17 */
@@ -968,7 +970,7 @@ function computeEnvelopeId(envelope: Omit<Kind17Envelope, 'id' | 'sig'>): string
  * Extract the raw 32-byte secp256k1 private key from the session identity.
  * The Secp256k1KeyIdentity.toJSON() returns [publicKeyHex, privateKeyHex].
  */
-function extractPrivateKeyHex(session: Session): string {
+export function extractPrivateKeyHex(session: Session): string {
   const identity = session.getIdentity();
   const json = (identity as any).toJSON() as [string, string];
   return json[1];
@@ -986,7 +988,7 @@ const SPKI_X_LENGTH = 64;
  * Extract the BIP-340 Schnorr public key (x-only, 32 bytes hex) from an SPKI hex string.
  * The x-coordinate sits at a fixed offset in the uncompressed secp256k1 SPKI DER structure.
  */
-function schnorrPubkeyFromSpki(spkiHex: string): string {
+export function schnorrPubkeyFromSpki(spkiHex: string): string {
   return spkiHex.slice(SPKI_X_OFFSET, SPKI_X_OFFSET + SPKI_X_LENGTH);
 }
 
@@ -1107,6 +1109,26 @@ async function cmdSendMsg(session: Session): Promise<void> {
 
   // Output the envelope as JSON (always JSON for machine consumption)
   console.log(JSON.stringify(envelope));
+
+  // Auto-POST to zMail if not explicitly disabled with --no-zmail.
+  // Failure only warns via stderr — the envelope is already output to stdout.
+  if (session.args['no-zmail'] !== true) {
+    try {
+      const zmailUrlFlag = session.args['zmail-url'];
+      const zmailUrlEnv = process.env['ZMAIL_URL'];
+      const zmailUrl = (typeof zmailUrlFlag === 'string' && zmailUrlFlag.length > 0)
+        ? zmailUrlFlag.replace(/\/+$/, '')
+        : (zmailUrlEnv && zmailUrlEnv.length > 0)
+          ? zmailUrlEnv.replace(/\/+$/, '')
+          : (await import('./config.js')).default.zmail_url;
+
+      const { postEnvelopeToZmail } = await import('./zmail.js');
+      const result = await postEnvelopeToZmail(zmailUrl, envelope);
+      console.error(`zMail: delivered (msg_id=${result.msg_id}, to=${result.delivered_to})`);
+    } catch (err) {
+      console.error(`zMail: delivery failed — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 }
 
 /**

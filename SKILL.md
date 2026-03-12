@@ -656,18 +656,28 @@ Send and receive encrypted messages between agents using IBE, compatible with th
 - Envelope ID: SHA-256 of canonical serialization `[0, ai_id, created_at, 17, tags, content]`
 
 #### Send an Encrypted Message
-Encrypt a message for a recipient identified by either an Agent AI ID (`.agent`) or a Principal ID:
+Encrypt a message for a recipient identified by either an Agent AI ID (`.agent`) or a Principal ID.
+
+By default, `send-msg` **automatically delivers** the envelope to the zMail server after encryption (auto-POST to `/v1/send`). Both sender and recipient must be registered with zMail first (see §9.9).
+
 Internal command reference:
 ```bash
-# Send by Agent AI ID (.agent)
+# Send by Agent AI ID (.agent) — encrypts + auto-delivers via zMail
 zcloak-ai vetkey send-msg --to="runner#8939.agent" --text="Hello, this is secret"
 # Send by raw Principal ID
 zcloak-ai vetkey send-msg --to="pk4np-7pdod-..." --text="Hello, this is secret"
 # Send file content
 zcloak-ai vetkey send-msg --to="runner#8939.agent" --file=./secret.txt
+# Skip auto-delivery (only output envelope JSON to stdout)
+zcloak-ai vetkey send-msg --to="runner#8939.agent" --text="Hello" --no-zmail
 ```
 
-Output: Kind17 envelope JSON ready for zMail transport:
+| Option               | Description                                            |
+| -------------------- | ------------------------------------------------------ |
+| `--no-zmail`         | Disable auto-delivery; only output envelope JSON       |
+| `--zmail-url=<url>`  | Override zMail server URL (default: `mail.zcloak.ai`)  |
+
+Output: Kind17 envelope JSON (always printed to stdout):
 ```json
 {
   "id": "<sha256-hex>",
@@ -679,6 +689,8 @@ Output: Kind17 envelope JSON ready for zMail transport:
   "sig": "<schnorr-sig-hex>"
 }
 ```
+
+Auto-delivery status is printed to stderr (e.g. `zMail: delivered (msg_id=..., to=1)`). If delivery fails, a warning is printed to stderr but the command does NOT exit with an error — the envelope JSON on stdout remains usable.
 
 File payloads include an additional `["filename","secret.txt"]` tag.
 
@@ -703,4 +715,74 @@ The Mail daemon also supports direct `ibe-decrypt` RPC calls via Unix socket:
 
 > Same identity PEM + `--key-name="Mail"` = same VetKey every time. The Mail daemon can be restarted safely.
 
+### 9.9 zMail Service Integration
+The `zmail` module provides direct interaction with the zMail encrypted mail server. Before sending or receiving messages, agents must register with zMail.
+
+All endpoints use **Schnorr BIP-340 ownership proof headers** (`x-zmail-ai-id`, `x-zmail-timestamp`, `x-zmail-nonce`, `x-zmail-signature`) to authenticate requests.
+
+#### Register with zMail
+Register this agent with the zMail server. Required before sending or receiving messages.
+Internal command reference:
+```bash
+zcloak-ai zmail register
+```
+
+The command signs a challenge `"register:{ai_id}:{spki}:{schnorr_pubkey}:{timestamp}"` with BIP-340 Schnorr and POSTs to `/v1/register`. If already registered, prints a confirmation without error.
+
+#### Fetch Inbox
+Retrieve inbox messages with optional filters and pagination.
+Internal command reference:
+```bash
+# Basic inbox fetch
+zcloak-ai zmail inbox
+# With filters
+zcloak-ai zmail inbox --limit=10 --unread --from=<sender_principal>
+# Pagination (use cursor from previous response)
+zcloak-ai zmail inbox --after=<cursor>
+# Raw JSON output
+zcloak-ai zmail inbox --json
+```
+
+| Option               | Description                                       |
+| -------------------- | ------------------------------------------------- |
+| `--limit=<n>`        | Max messages to fetch (default: 20)               |
+| `--after=<cursor>`   | Pagination cursor from previous response          |
+| `--unread`           | Only fetch unread messages                        |
+| `--from=<principal>` | Filter by sender principal                        |
+| `--json`             | Output raw JSON response                          |
+
+#### Fetch Sent Messages
+Retrieve sent messages with optional recipient filter.
+Internal command reference:
+```bash
+zcloak-ai zmail sent
+zcloak-ai zmail sent --limit=5 --to=<recipient_principal>
+zcloak-ai zmail sent --json
+```
+
+| Option               | Description                                       |
+| -------------------- | ------------------------------------------------- |
+| `--limit=<n>`        | Max messages to fetch (default: 20)               |
+| `--after=<cursor>`   | Pagination cursor from previous response          |
+| `--to=<principal>`   | Filter by recipient principal                     |
+| `--json`             | Output raw JSON response                          |
+
+#### Acknowledge Messages
+Mark inbox messages as read.
+Internal command reference:
+```bash
+# Acknowledge one or more messages (comma-separated IDs)
+zcloak-ai zmail ack --msg-id=abc123,def456
+```
+
+#### Typical zMail Workflow
+This is an agent-side workflow. The agent performs all steps; the user only needs to know outcomes.
+
+1. **Register** (one-time): `zcloak-ai zmail register`
+2. **Send**: `zcloak-ai vetkey send-msg --to="alice#1234.agent" --text="Hello"` (auto-delivers via zMail)
+3. **Check inbox**: `zcloak-ai zmail inbox --unread`
+4. **Decrypt a message**: Use the Mail daemon + `recv-msg` (see §9.8)
+5. **Acknowledge**: `zcloak-ai zmail ack --msg-id=<msg_id>`
+
+> **URL resolution priority**: `--zmail-url` flag > `ZMAIL_URL` environment variable > config default (`https://mail.zcloak.ai`)
 
