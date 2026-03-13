@@ -219,14 +219,10 @@ export class DaemonRuntime {
         const existingPid = parseInt(pidStr, 10);
 
         if (!isNaN(existingPid) && isProcessAlive(existingPid)) {
-          throw daemonError(
-            `Daemon already running (PID ${existingPid}, derivation_id: ${derivationId}). ` +
-            `Use 'zcloak-ai vetkey stop --key-name ...' to stop it first.`,
+          console.log(
+            `Already running daemon detected for derivation ID "${derivationId}" (PID ${existingPid})`,
           );
         }
-
-        // Stale PID file — clean up
-        console.error(`Removing stale PID file (PID ${pidStr} no longer running)`);
       } catch (e) {
         // Re-throw ToolError (daemon already running)
         if (e instanceof Error && e.name === "ToolError") throw e;
