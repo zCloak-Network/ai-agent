@@ -17,6 +17,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Session } from './session.js';
+import * as log from './log.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -76,8 +77,8 @@ async function cmdPrepare(session: Session, filePath: string | undefined): Promi
     request_timestamp: requestTimestamp,
   });
 
-  console.error(`File: ${fileName} (${fileSize} bytes)`);
-  console.error('Calling prepare_2fa_info...');
+  log.info(`File: ${fileName} (${fileSize} bytes)`);
+  log.info('Calling prepare_2fa_info...');
 
   // Call prepare_2fa_info (update call, requires identity)
   const actor = await session.getRegistryActor();
@@ -85,7 +86,7 @@ async function cmdPrepare(session: Session, filePath: string | undefined): Promi
 
   // Check return result — variant { Ok: text } | { Err: text }
   if ('Err' in result) {
-    console.error('2FA preparation failed:');
+    log.error('2FA preparation failed:');
     console.log(`(variant { Err = "${result.Err}" })`);
     process.exit(1);
   }
@@ -125,7 +126,7 @@ async function cmdCheck(session: Session, challenge: string | undefined): Promis
     process.exit(1);
   }
 
-  console.error('Querying 2FA result...');
+  log.info('Querying 2FA result...');
 
   // Query 2FA result (query call, can use anonymous actor)
   const actor = await session.getAnonymousRegistryActor();
@@ -176,7 +177,7 @@ async function cmdConfirm(
     process.exit(1);
   }
 
-  console.error('Querying 2FA result...');
+  log.info('Querying 2FA result...');
 
   // Query 2FA result (query call, can use anonymous actor)
   const actor = await session.getAnonymousRegistryActor();
@@ -201,7 +202,7 @@ async function cmdConfirm(
 
   // 2FA confirmed — proceed with file deletion
   const fileName = path.basename(resolvedPath);
-  console.error(`2FA confirmed. Deleting file: ${fileName}`);
+  log.info(`2FA confirmed. Deleting file: ${fileName}`);
 
   fs.unlinkSync(resolvedPath);
 
@@ -237,7 +238,7 @@ export async function run(session: Session): Promise<void> {
         process.exit(1);
     }
   } catch (err) {
-    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

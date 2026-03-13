@@ -14,6 +14,7 @@
 
 import { formatSignEvents } from './utils.js';
 import { Session } from './session.js';
+import * as log from './log.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -84,7 +85,7 @@ export async function run(session: Session): Promise<void> {
         process.exit(1);
     }
   } catch (err) {
-    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

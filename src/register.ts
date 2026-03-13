@@ -19,6 +19,7 @@
 import { getProfileUrl } from './utils.js';
 import { Session } from './session.js';
 import { generalParseAiIdToRecord, isReadableId } from './aiid.js';
+import * as log from './log.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -95,7 +96,7 @@ function cmdGetPrincipal(session: Session): void {
 /** Query current principal's agent name */
 async function cmdLookup(session: Session): Promise<void> {
   const principal = session.getPrincipal();
-  console.error(`Current principal: ${principal}`);
+  log.info(`Current principal: ${principal}`);
 
   const actor = await session.getAnonymousRegistryActor();
   const result = await actor.user_profile_get_by_principal(principal);
@@ -289,7 +290,7 @@ export async function run(session: Session): Promise<void> {
         process.exit(1);
     }
   } catch (err) {
-    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

@@ -43,6 +43,7 @@ import {
   parseRpcRequest,
   isErrorResponse,
 } from './rpc.js';
+import * as log from './log.js';
 
 /** Maximum data size for encrypt/decrypt operations (1 GB) */
 const MAX_DATA_SIZE = 1024 * 1024 * 1024;
@@ -485,9 +486,9 @@ export function runDaemonUds(
     // Step 3: Listen on socket
     server.listen(sockPath, () => {
       // Emit ready info to stderr
-      console.error(`Daemon ready. Socket: ${sockPath}`);
-      console.error(`Derivation ID: ${derivationId}`);
-      console.error(`Principal: ${principal}`);
+      log.info(`Daemon ready. Socket: ${sockPath}`);
+      log.info(`Derivation ID: ${derivationId}`);
+      log.info(`Principal: ${principal}`);
     });
 
     server.on("error", (err) => {
@@ -496,10 +497,10 @@ export function runDaemonUds(
     });
 
     // Step 4: Signal handling — store references for cleanup in finishShutdown()
-    const onSigterm = () => { console.error("Received SIGTERM, initiating graceful shutdown..."); initiateShutdown(); };
-    const onSigint = () => { console.error("Received SIGINT, initiating graceful shutdown..."); initiateShutdown(); };
+    const onSigterm = () => { log.warn("Received SIGTERM, initiating graceful shutdown..."); initiateShutdown(); };
+    const onSigint = () => { log.warn("Received SIGINT, initiating graceful shutdown..."); initiateShutdown(); };
     // SIGHUP: terminal hangup — gracefully shut down instead of crashing
-    const onSighup = () => { console.error("Received SIGHUP, initiating graceful shutdown..."); initiateShutdown(); };
+    const onSighup = () => { log.warn("Received SIGHUP, initiating graceful shutdown..."); initiateShutdown(); };
 
     process.on("SIGTERM", onSigterm);
     process.on("SIGINT", onSigint);
@@ -508,12 +509,12 @@ export function runDaemonUds(
     // Catch uncaught exceptions / unhandled rejections to ensure key zeroization
     // and PID file cleanup even on unexpected errors.
     const onUncaughtException = (err: Error) => {
-      console.error(`Uncaught exception in daemon: ${err.message}`);
-      console.error(err.stack);
+      log.error(`Uncaught exception in daemon: ${err.message}`);
+      log.error(err.stack);
       initiateShutdown();
     };
     const onUnhandledRejection = (reason: unknown) => {
-      console.error(`Unhandled rejection in daemon: ${reason}`);
+      log.error(`Unhandled rejection in daemon: ${reason}`);
       initiateShutdown();
     };
 
@@ -570,7 +571,7 @@ export function runDaemonUds(
       keyStore.destroy();
       runtime.destroy();
 
-      console.error("Daemon stopped. Key has been zeroized.");
+      log.info("Daemon stopped. Key has been zeroized.");
       resolve();
     }
   });

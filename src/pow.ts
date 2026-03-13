@@ -14,6 +14,7 @@
 
 import crypto from 'crypto';
 import { Session } from './session.js';
+import * as log from './log.js';
 
 // ========== Exported run() — called by cli.ts ==========
 
@@ -80,7 +81,7 @@ export function run(session: Session): void {
     if (nonce % 10000 === 0) {
       const elapsed = Date.now() - start;
       if (elapsed > POW_TIMEOUT_MS) {
-        console.error(
+        log.error(
           `PoW computation timed out after ${Math.round(elapsed / 1000)}s ` +
           `(${nonce} hashes tried, zeros=${zeros}). ` +
           `Consider reducing the zeros parameter.`

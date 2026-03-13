@@ -19,6 +19,7 @@ import { schnorr } from '@noble/curves/secp256k1';
 import { bytesToHex } from '@noble/hashes/utils';
 import type { Session } from './session.js';
 import config from './config.js';
+import * as log from './log.js';
 import { extractPrivateKeyHex, schnorrPubkeyFromSpki } from './vetkey.js';
 import type { Kind17Envelope } from './vetkey.js';
 
@@ -295,8 +296,8 @@ async function cmdRegister(session: Session): Promise<void> {
     sig,
   };
 
-  console.error(`Registering with zMail at ${zmailUrl}...`);
-  console.error(`  ai_id: ${principal}`);
+  log.info(`Registering with zMail at ${zmailUrl}...`);
+  log.info(`  ai_id: ${principal}`);
 
   const url = `${zmailUrl}/v1/register`;
   let res: Response;
@@ -323,9 +324,9 @@ async function cmdRegister(session: Session): Promise<void> {
   } else {
     // Unexpected error
     const errorCode = (body.error as string) || `HTTP ${res.status}`;
-    console.error(`Registration failed: ${errorCode}`);
+    log.error(`Registration failed: ${errorCode}`);
     if (body.retry_after) {
-      console.error(`  retry_after: ${body.retry_after}s`);
+      log.error(`  retry_after: ${body.retry_after}s`);
     }
     process.exit(1);
   }
@@ -368,7 +369,7 @@ async function cmdInbox(session: Session): Promise<void> {
   // Build ownership proof headers
   const headers = buildOwnershipProofHeaders(session, 'GET', path, query);
 
-  console.error(`Fetching inbox from ${zmailUrl}...`);
+  log.info(`Fetching inbox from ${zmailUrl}...`);
 
   let res: Response;
   try {
@@ -446,7 +447,7 @@ async function cmdSent(session: Session): Promise<void> {
 
   const headers = buildOwnershipProofHeaders(session, 'GET', path, query);
 
-  console.error(`Fetching sent messages from ${zmailUrl}...`);
+  log.info(`Fetching sent messages from ${zmailUrl}...`);
 
   let res: Response;
   try {
@@ -522,7 +523,7 @@ async function cmdAck(session: Session): Promise<void> {
     ...buildOwnershipProofHeaders(session, 'POST', path, undefined, body),
   };
 
-  console.error(`Acknowledging ${msgIds.length} message(s)...`);
+  log.info(`Acknowledging ${msgIds.length} message(s)...`);
 
   let res: Response;
   try {

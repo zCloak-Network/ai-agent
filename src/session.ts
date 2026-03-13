@@ -29,6 +29,7 @@ import type { SignService } from './types/sign-event.js';
 import type { RegistryService } from './types/registry.js';
 import type { ParsedArgs, AutoPowResult } from './types/common.js';
 import type { CanisterIds } from './types/config.js';
+import * as log from './log.js';
 
 /** IC mainnet host address */
 const IC_HOST = 'https://ic0.app';
@@ -190,7 +191,7 @@ export class Session {
     const actor = await this.getSignActor();
 
     // Fetch PoW base (user's latest sign event ID)
-    console.error('Fetching PoW base...');
+    log.info('Fetching PoW base...');
     const base = await actor.get_user_latest_sign_event_id(principal);
 
     // The canister always returns a string. Empty string "" is valid (first-time user).
@@ -199,9 +200,9 @@ export class Session {
     }
 
     // Compute PoW nonce
-    console.error(`Computing PoW (zeros=${config.pow_zeros})...`);
+    log.info(`Computing PoW (zeros=${config.pow_zeros})...`);
     const result = computePow(base, config.pow_zeros);
-    console.error(`PoW completed: nonce=${result.nonce}, took ${result.timeMs}ms`);
+    log.info(`PoW completed: nonce=${result.nonce}, took ${result.timeMs}ms`);
 
     return { nonce: result.nonce, hash: result.hash, base };
   }

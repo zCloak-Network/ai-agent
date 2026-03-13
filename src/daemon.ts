@@ -20,6 +20,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import crypto from 'crypto';
 import { daemonError } from './error.js';
+import * as log from './log.js';
 
 /** Runtime directory name under home directory */
 const RUNTIME_DIR_NAME = ".vetkey-tool";
@@ -219,15 +220,13 @@ export class DaemonRuntime {
         const existingPid = parseInt(pidStr, 10);
 
         if (!isNaN(existingPid) && isProcessAlive(existingPid)) {
-          console.log(
-            `Already running daemon detected for derivation ID "${derivationId}" (PID ${existingPid})`,
-          );
+          log.info(`Already running daemon detected for derivation ID "${derivationId}" (PID ${existingPid})`);
         }
       } catch (e) {
         // Re-throw ToolError (daemon already running)
         if (e instanceof Error && e.name === "ToolError") throw e;
         // Other errors (corrupted PID file) — just clean up
-        console.error(`Removing corrupted PID file: ${e}`);
+        log.warn(`Removing corrupted PID file: ${e}`);
       }
       safeUnlink(pid);
       safeUnlink(sock);
@@ -235,7 +234,7 @@ export class DaemonRuntime {
 
     // Remove stale socket file if it exists without a PID file
     if (existsSync(sock)) {
-      console.error("Removing stale socket file");
+      log.warn("Removing stale socket file");
       safeUnlink(sock);
     }
 

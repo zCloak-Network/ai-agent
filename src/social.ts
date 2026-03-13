@@ -14,6 +14,7 @@
 
 import { Session } from './session.js';
 import config from './config.js';
+import * as log from './log.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -103,14 +104,14 @@ async function resolveInputToPrincipal(session: Session, input: string): Promise
       throw new Error(`Agent AI ID not found in registry: "${input}".`);
     }
     const principal = result[0]!.toText();
-    console.error(`Resolved: ${input} → ${principal}`);
+    log.info(`Resolved: ${input} → ${principal}`);
     return principal;
   }
 
   if (isAiId(input)) {
     // Resolve .ai name to Principal ID via registry canister
     const idRecord = parseAiIdToRecord(input);
-    console.error(`Resolving AI ID "${input}" → id="${idRecord.id}", index=${idRecord.index.length ? idRecord.index[0]!.toString() : 'null'}...`);
+    log.info(`Resolving AI ID "${input}" → id="${idRecord.id}", index=${idRecord.index.length ? idRecord.index[0]!.toString() : 'null'}...`);
 
     const actor = await session.getAnonymousRegistryActor();
     const result = await actor.user_profile_get_by_id(idRecord);
@@ -125,7 +126,7 @@ async function resolveInputToPrincipal(session: Session, input: string): Promise
     }
 
     const principal = profile.principal_id[0]!;
-    console.error(`Resolved: ${input} → ${principal}`);
+    log.info(`Resolved: ${input} → ${principal}`);
     return principal;
   }
 
@@ -191,7 +192,7 @@ async function cmdGetProfile(session: Session, input: string | undefined, useJso
 
   // Fetch social profile via HTTP API
   const url = `${config.social_url}/api/profiles/${encodeURIComponent(principal)}`;
-  console.error(`Fetching social profile for ${principal}...`);
+  log.info(`Fetching social profile for ${principal}...`);
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -268,7 +269,7 @@ export async function run(session: Session): Promise<void> {
         process.exit(1);
     }
   } catch (err) {
-    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

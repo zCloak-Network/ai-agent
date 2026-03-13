@@ -25,6 +25,7 @@ import {
 } from './utils.js';
 import { Session } from './session.js';
 import type { SignEvent } from './types/sign-event.js';
+import * as log from './log.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -163,7 +164,7 @@ async function cmdVerifyFolder(session: Session, folderPath: string | undefined)
   }
 
   if (!allPassed) {
-    console.error('\nLocal verification failed! Some files may have been modified.');
+    log.error('Local verification failed! Some files may have been modified.');
     process.exit(1);
   }
   console.log('\nLocal verification passed!');
@@ -229,7 +230,7 @@ export async function run(session: Session): Promise<void> {
         process.exit(1);
     }
   } catch (err) {
-    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

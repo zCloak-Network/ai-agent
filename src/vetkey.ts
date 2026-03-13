@@ -42,6 +42,7 @@ import { KeyStore } from './key-store.js';
 import { runDaemonUds, runDaemonStdio } from './serve.js';
 import { isDaemonAlive, socketPath } from './daemon.js';
 import { ToolError, canisterCallError } from './error.js';
+import * as log from './log.js';
 
 /**
  * Absolute path to cli.js (the CLI entry script).
@@ -122,11 +123,6 @@ function showHelp(): void {
   console.log('  encrypt-only    Encrypt locally without canister sign');
   console.log('  pubkey          Get IBE public key from canister');
   console.log('');
-  console.log('Daemon Commands (AES-256-GCM):');
-  console.log('  serve           Start encryption daemon');
-  console.log('  stop            Stop a running daemon');
-  console.log('  status          Query daemon status');
-  console.log('');
   console.log('Kind5 Access Control:');
   console.log('  grant           Grant decryption access to another user');
   console.log('  revoke          Revoke an access grant');
@@ -142,8 +138,7 @@ function showHelp(): void {
   console.log('  --file=<path>           File to encrypt');
   console.log('  --event-id=<id>         Event ID for decryption');
   console.log('  --output=<path>         Output file path');
-  console.log('  --key-name=<name>       Daemon key name (default: "default")');
-  console.log('  --stdio                 Use stdin/stdout mode for daemon');
+  // --key-name and --stdio are internal daemon options, not shown to users
   console.log('  --public-key=<hex>      IBE public key for offline encryption');
   console.log('  --ibe-identity=<id>     IBE identity for offline encryption');
   console.log('  --tags=<json>           Tags as JSON array');
@@ -466,9 +461,9 @@ async function cmdServe(session: Session): Promise<void> {
   }
 
   // Derive AES-256 key from VetKey via the sign actor
-  console.error(`Deriving AES-256 key from VetKey (derivation_id: ${derivationId})...`);
+  log.info(`Deriving AES-256 key from VetKey (derivation_id: ${derivationId})...`);
   const keyStore = await KeyStore.deriveFromActor(actor, derivationId);
-  console.error("Key derived successfully. Starting JSON-RPC daemon...");
+  log.info("Key derived successfully. Starting JSON-RPC daemon...");
 
   if (stdio) {
     await runDaemonStdio(keyStore, principal, derivationId);
@@ -593,7 +588,7 @@ async function cmdStatus(session: Session): Promise<void> {
         console.log(`  Socket:        ${result.socket_path}`);
       }
     } else if (response.error) {
-      console.error(`Error: ${response.error}`);
+      log.error(`Error: ${response.error}`);
     }
   }
 }
@@ -686,10 +681,10 @@ async function ensureDaemon(session: Session, keyName: string): Promise<string> 
     return socketPath(derivationId);
   }
 
-  console.error(`[zcloak-ai] ${keyName} daemon is not running. Starting it automatically...`);
+  log.info(`${keyName} daemon is not running. Starting it automatically...`);
 
   const pid = spawnDaemonBackground(session.getPemPath(), keyName);
-  console.error(`[zcloak-ai] ${keyName} daemon spawned (PID: ${pid ?? 'unknown'}). Waiting for ready...`);
+  log.info(`${keyName} daemon spawned (PID: ${pid ?? 'unknown'}). Waiting for ready...`);
 
   // Poll for the socket file to appear (daemon writes PID + creates socket on ready)
   const sock = socketPath(derivationId);
@@ -700,7 +695,7 @@ async function ensureDaemon(session: Session, keyName: string): Promise<string> 
     await new Promise((resolve) => setTimeout(resolve, DAEMON_POLL_INTERVAL_MS));
 
     if (isDaemonAlive(derivationId) && existsSync(sock)) {
-      console.error(`[zcloak-ai] ${keyName} daemon is ready. Socket: ${sock}`);
+      log.info(`${keyName} daemon is ready. Socket: ${sock}`);
       return sock;
     }
   }
@@ -740,7 +735,7 @@ export function ensureDaemonsBackground(
       if (!isDaemonAlive(derivationId)) {
         const pid = spawnDaemonBackground(pemPath, keyName);
         if (pid) {
-          console.error(`[zcloak-ai] ${keyName} daemon was not running — auto-started (PID: ${pid})`);
+          log.info(`${keyName} daemon was not running — auto-started (PID: ${pid})`);
         }
       }
     } catch {
@@ -1349,9 +1344,9 @@ async function cmdSendMsg(session: Session): Promise<void> {
 
       const { postEnvelopeToZmail } = await import('./zmail.js');
       const result = await postEnvelopeToZmail(zmailUrl, envelope);
-      console.error(`zMail: delivered (msg_id=${result.msg_id}, to=${result.delivered_to})`);
+      log.info(`zMail: delivered (msg_id=${result.msg_id}, to=${result.delivered_to})`);
     } catch (err) {
-      console.error(`zMail: delivery failed — ${err instanceof Error ? err.message : String(err)}`);
+      log.error(`zMail: delivery failed — ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 }

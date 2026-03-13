@@ -399,7 +399,7 @@ zcloak-ai delete confirm "<challenge>" ./report.pdf
 
 ## 9. VetKey — Encryption & Decryption
 End-to-end encryption using ICP VetKey. Two modes available:
-- **Daemon mode** (recommended): Encrypts/decrypts files fast via JSON-RPC over Unix Domain Socket. Daemons are **fully automatic** — they start in the background whenever the CLI runs, no manual management needed.
+- **Daemon mode** (recommended): Encrypts/decrypts files fast via AES-256-GCM. Daemons are **fully managed by the CLI** — automatically started, health-checked, and kept alive. Users never need to interact with daemons.
 - **IBE mode**: Per-operation Identity-Based Encryption for Kind5 PrivatePost on-chain storage.
 
 Operates on raw bytes — **any file type** is supported (`.md`, `.png`, `.pdf`, `.json`, etc., up to 1 GB).
@@ -447,18 +447,7 @@ zcloak-ai vetkey pubkey --json
 ### 9.2 Daemon Mode (recommended for AI agents)
 A long-running daemon derives an AES-256 key from VetKey at startup and holds it in memory. Subsequent encrypt/decrypt operations are instant (no canister calls).
 
-Standard daemons (`default` and `Mail`) are **fully automatic** — the CLI starts them in the background whenever needed. You do NOT need to start, stop, or check daemon status manually. Commands that depend on a daemon (e.g. `recv-msg`) will auto-start it and wait until ready.
-
-#### JSON-RPC Protocol
-Connect to the Unix socket and send JSON-RPC requests (one per line):
-```json
-{"id":1,"method":"encrypt","params":{"input_file":"secret.txt","output_file":"secret.enc"}}
-{"id":2,"method":"decrypt","params":{"input_file":"secret.enc","output_file":"decrypted.txt"}}
-{"id":3,"method":"encrypt","params":{"data_base64":"SGVsbG8gV29ybGQ="}}
-{"id":4,"method":"status"}
-{"id":5,"method":"quit"}
-{"id":6,"method":"shutdown"}
-```
+Daemons are **fully managed by the CLI** — automatically started, health-checked, and kept alive in the background. Users never need to start, stop, or manage daemons. All commands that require a daemon (e.g. file encryption, `recv-msg`) will auto-start and wait until ready. Do NOT mention daemon internals to the user — they are invisible implementation details.
 
 ### 9.3 Typical Workflow: Encrypt Skills for Cloud Backup
 
@@ -562,13 +551,7 @@ zcloak-ai vetkey decrypt --event-id "EVENT_ID" --json
 
 > **Note for the grantee's agent:** If decryption fails with an authorization error, the grantee should confirm with the post owner that the grant is still active and the event ID is correct.
 
-### 9.5 Agent Rules: Daemon Usage
-1. **Daemons auto-start.** Standard daemons (`default` and `Mail`) are automatically launched in the background by the CLI. No manual intervention needed.
-2. **Reuse the running daemon for every operation.** Send requests to the already-running daemon via Unix Domain Socket. Do NOT start a new daemon for each operation.
-3. **NEVER send `{"method":"shutdown"}`**.
-4. **The daemon is designed to be long-lived.** Key is held in memory securely (zeroed on exit). No benefit to restarting — significant cost (fresh canister call).
-
-### 9.6 Key Properties
+### 9.5 Key Properties
 - Same `derivation_id` always derives the same key — previously encrypted files can always be decrypted
 - Key never leaves process memory — not exposed via any API
 - On exit, key bytes are overwritten with zeros (`Buffer.fill(0)`)
@@ -576,12 +559,12 @@ zcloak-ai vetkey decrypt --event-id "EVENT_ID" --json
 - Maximum file size: 1 GB
 - VetKey uses BLS12-381 — key derivation via blockchain consensus (no single point of trust)
 
-### 9.7 Encrypted Messaging (Mail Mode — Kind17 Envelope)
+### 9.6 Encrypted Messaging (Mail Mode — Kind17 Envelope)
 Send and receive encrypted messages between agents using IBE, compatible with the zMail protocol (Kind 17 envelope format).
 
 **Key properties:**
 - Sender only needs the IBE public key (no key exchange, no recipient key pair needed)
-- Mail daemon auto-starts when needed; all subsequent decryptions are instant
+- All decryptions are instant (daemon managed automatically by CLI)
 - Maximum payload: 64 KB
 - Message format: Kind 17 envelope (Nostr-inspired) with BIP-340 Schnorr signature
 - Envelope ID: SHA-256 of canonical serialization `[0, ai_id, created_at, 17, tags, content]`
@@ -626,7 +609,6 @@ Auto-delivery status is printed to stderr (e.g. `zMail: delivered (msg_id=..., t
 File payloads include an additional `["filename","secret.txt"]` tag.
 
 #### Receive (Decrypt) a Message
-The Mail daemon is auto-started when needed — no manual daemon startup required.
 Internal command reference:
 ```bash
 # Decrypt a received Kind17 envelope (Mail daemon auto-starts if not running)
@@ -636,7 +618,7 @@ zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,"ai_id":"...","created_a
 zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,...}' --output=./secret.txt
 ```
 
-### 9.8 zMail Service Integration
+### 9.7 zMail Service Integration
 The `zmail` module provides direct interaction with the zMail encrypted mail server. Before sending or receiving messages, agents must register with zMail.
 
 All endpoints use **Schnorr BIP-340 ownership proof headers** (`x-zmail-ai-id`, `x-zmail-timestamp`, `x-zmail-nonce`, `x-zmail-signature`) to authenticate requests.

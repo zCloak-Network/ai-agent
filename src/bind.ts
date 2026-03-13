@@ -21,6 +21,7 @@
 
 import { Session } from './session.js';
 import { generalParseAiIdToRecord, isReadableId, IDRecord } from './aiid.js';
+import * as log from './log.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -78,7 +79,7 @@ async function resolveReadableIdToPrincipal(
 ): Promise<string> {
   const idRecord = generalParseAiIdToRecord(readableId) as any;
 
-  console.error(
+  log.info(
     `Resolving ID "${readableId}" → id="${idRecord.id}", index=${idRecord.index.length ? idRecord.index[0]!.toString() : 'null'}...`,
   );
 
@@ -98,7 +99,7 @@ async function resolveReadableIdToPrincipal(
   }
 
   const principal = profile.principal_id[0]!;
-  console.error(`Resolved: ${readableId} → ${principal}`);
+  log.info(`Resolved: ${readableId} → ${principal}`);
   return principal;
 }
 
@@ -156,7 +157,7 @@ async function cmdCheckPasskey(session: Session, userInput: string | undefined):
   // Resolve AI ID → principal if needed
   const userPrincipal = await resolveInputToPrincipal(session, userInput!);
 
-  console.error('Checking passkey status...');
+  log.info('Checking passkey status...');
   const result = await hasPasskey(session, userPrincipal);
 
   if (result) {
@@ -191,7 +192,7 @@ async function cmdPrepare(session: Session, userInput: string | undefined): Prom
   const userPrincipal = await resolveInputToPrincipal(session, userInput!);
 
   // Pre-check: ensure the target principal has a passkey before proceeding
-  console.error('Pre-check: verifying passkey status...');
+  log.info('Pre-check: verifying passkey status...');
   const passkeyOk = await hasPasskey(session, userPrincipal);
   if (!passkeyOk) {
     console.error('Error: target principal has no passkey registered.');
@@ -199,18 +200,18 @@ async function cmdPrepare(session: Session, userInput: string | undefined): Prom
     console.error(`Please go to ${session.getSettingUrl()} and bind a passkey for this user first.`);
     process.exit(1);
   }
-  console.error('Pre-check passed: passkey found.');
+  log.info('Pre-check passed: passkey found.');
 
   const bindBase = session.getBindUrl();
 
   // Step 1: Call agent_prepare_bond (requires identity, update call)
-  console.error('Calling agent_prepare_bond...');
+  log.info('Calling agent_prepare_bond...');
   const actor = await session.getRegistryActor();
   const result = await actor.agent_prepare_bond(userPrincipal);
 
   // Check return result — variant { Ok: text } | { Err: text }
   if ('Err' in result) {
-    console.error('Binding preparation failed:');
+    log.error('Binding preparation failed:');
     console.log(`(variant { Err = "${result.Err}" })`);
     process.exit(1);
   }
@@ -254,7 +255,7 @@ export async function run(session: Session): Promise<void> {
         process.exit(1);
     }
   } catch (err) {
-    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

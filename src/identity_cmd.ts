@@ -23,6 +23,7 @@
 import { DEFAULT_PEM_PATH, ensureIdentityFile, loadIdentityFromPath, resolveCliPath } from './identity.js';
 import { Session } from './session.js';
 import type { ParsedArgs } from './types/common.js';
+import * as log from './log.js';
 
 // ========== Help ==========
 
@@ -132,7 +133,7 @@ export function run(session: Session): void {
         process.exit(1);
     }
   } catch (err) {
-    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

@@ -23,6 +23,7 @@ import {
 } from './utils.js';
 import { Session } from './session.js';
 import type { ParsedArgs } from './types/common.js';
+import * as log from './log.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -71,7 +72,7 @@ function cmdManifest(folderPath: string | undefined, args: ParsedArgs): void {
     console.log(`MANIFEST SHA256: ${result.manifestHash}`);
     console.log(`MANIFEST size: ${result.manifestSize} bytes`);
   } catch (err) {
-    console.error(`Failed to generate MANIFEST: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Failed to generate MANIFEST: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }
@@ -107,7 +108,7 @@ function cmdVerifyManifest(folderPath: string | undefined): void {
   }
 
   if (!allPassed) {
-    console.error(`\nVerification failed! Some files do not match (checked ${results.length} files)`);
+    log.error(`Verification failed! Some files do not match (checked ${results.length} files)`);
     process.exit(1);
   }
 
@@ -197,7 +198,7 @@ export function run(session: Session): void {
         process.exit(1);
     }
   } catch (err) {
-    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

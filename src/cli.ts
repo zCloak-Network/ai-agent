@@ -13,7 +13,7 @@
  *   zcloak-ai bind <command> [args]       Agent-Owner binding
  *   zcloak-ai doc <command> [args]        Document tools
  *   zcloak-ai pow <base> <zeros>          PoW computation
- *   zcloak-ai vetkey <command> [args]     VetKey encryption/decryption and daemon
+ *   zcloak-ai vetkey <command> [args]     VetKey encryption/decryption
  *   zcloak-ai social <command> [args]     Social profile query
  *   zcloak-ai zmail <command> [args]      Encrypted mail (register, inbox, sent, ack)
  *   zcloak-ai pre-check                   Manually run the package/skill update pre-check
@@ -38,6 +38,7 @@ import { Session } from './session.js';
 import { preCheck } from './pre-check.js';
 import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity.js';
 import { ensureDaemonsBackground } from './vetkey.js';
+import * as log from './log.js';
 
 /** ESM equivalent of __dirname */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -73,7 +74,7 @@ function showHelp(): void {
   console.log('  delete      File deletion with 2FA verification (prepare, check, confirm)');
   console.log('  doc         Document tools (manifest, verify-manifest, hash, info)');
   console.log('  pow         PoW computation (<base_string> <zeros>)');
-  console.log('  vetkey      VetKey encryption/decryption (encrypt-sign, decrypt, serve, ...)');
+  console.log('  vetkey      VetKey encryption/decryption (encrypt-sign, decrypt, ...)');
   console.log('  social      Social profile query (get-profile)');
   console.log('  zmail       Encrypted mail (register, inbox, sent, ack)');
   console.log('  pre-check   Manually run the package/skill update pre-check');
@@ -118,9 +119,9 @@ async function main(): Promise<void> {
   if (moduleName === 'pre-check') {
     const checkResult = await preCheck();
     if (checkResult.updated) {
-      console.error(checkResult.message);
+      log.info(checkResult.message);
     } else {
-      console.log('[zcloak-ai] Pre-check complete. No updates were applied.');
+      log.info('Pre-check complete. No updates were applied.');
     }
     process.exit(0);
   }
@@ -140,7 +141,7 @@ async function main(): Promise<void> {
   // stop so the caller can reload context and re-run on the updated bits.
   const checkResult = await preCheck();
   if (checkResult.updated) {
-    console.error(checkResult.message);
+    log.info(checkResult.message);
     process.exit(0);
   }
 
@@ -181,6 +182,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+  log.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 });

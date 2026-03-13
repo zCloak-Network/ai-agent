@@ -40,6 +40,7 @@ import { Session } from './session.js';
 import type { SignParm } from './types/sign-event.js';
 import type { ParsedArgs } from './types/common.js';
 import type { SignResultLink } from './utils.js';
+import * as log from './log.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -268,9 +269,9 @@ async function cmdSignFile(session: Session, filePath: string | undefined, args:
   const fileName = path.basename(filePath);
   const mime = getMimeType(filePath);
 
-  console.error(`File: ${fileName}`);
-  console.error(`Hash: ${fileHash}`);
-  console.error(`Size: ${fileSize} bytes`);
+  log.info(`File: ${fileName}`);
+  log.info(`Hash: ${fileHash}`);
+  log.info(`Size: ${fileSize} bytes`);
 
   // Build content JSON
   const url = typeof args.url === 'string' ? args.url : '';
@@ -311,19 +312,19 @@ async function cmdSignFolder(session: Session, folderPath: string | undefined, a
   }
 
   // Generate MANIFEST.md (with metadata header)
-  console.error('Generating MANIFEST.md...');
+  log.info('Generating MANIFEST.md...');
   let manifest;
   try {
     const version = typeof args.version === 'string' ? args.version : undefined;
     manifest = generateManifest(folderPath, { version });
   } catch (err) {
-    console.error(`Failed to generate MANIFEST.md: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Failed to generate MANIFEST.md: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 
   const { manifestHash, manifestSize } = manifest;
-  console.error(`MANIFEST hash: ${manifestHash}`);
-  console.error(`MANIFEST size: ${manifestSize} bytes`);
+  log.info(`MANIFEST hash: ${manifestHash}`);
+  log.info(`MANIFEST size: ${manifestSize} bytes`);
 
   // Build content JSON
   const url = typeof args.url === 'string' ? args.url : '';
@@ -399,7 +400,7 @@ export async function run(session: Session): Promise<void> {
         process.exit(1);
     }
   } catch (err) {
-    console.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
+    log.error(`Operation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }
