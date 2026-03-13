@@ -565,7 +565,7 @@ zcloak-ai vetkey decrypt --event-id "EVENT_ID" --json
 ### 9.5 Agent Rules: Daemon Usage
 1. **Daemons auto-start.** Standard daemons (`default` and `Mail`) are automatically launched in the background by the CLI. No manual intervention needed.
 2. **Reuse the running daemon for every operation.** Send requests to the already-running daemon via Unix Domain Socket. Do NOT start a new daemon for each operation.
-3. **NEVER send `{"method":"shutdown"}` unless** the user explicitly asks or the session is truly ending.
+3. **NEVER send `{"method":"shutdown"}`**.
 4. **The daemon is designed to be long-lived.** Key is held in memory securely (zeroed on exit). No benefit to restarting — significant cost (fresh canister call).
 
 ### 9.6 Key Properties
