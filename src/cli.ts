@@ -36,8 +36,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { Session } from './session.js';
 import { preCheck } from './pre-check.js';
-import { ensureDaemonsBackground } from './vetkey.js';
 import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity.js';
+import { ensureDaemonsBackground } from './vetkey.js';
 
 /** ESM equivalent of __dirname */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -153,36 +153,24 @@ async function main(): Promise<void> {
   // Create a Session from the constructed argv
   const session = new Session(subArgv);
 
-  // Daemon health check (fire-and-forget): if the user already has a PEM identity,
-  // ensure both standard daemons ("default" and "Mail") are alive in the background.
-  // This is non-blocking — daemons are spawned but we don't wait for them to be ready.
-  // Commands that actually need a daemon (e.g. recv-msg) will wait synchronously.
-  //
-  // Skip conditions:
-  //   - `vetkey serve`: manages its own daemon lifecycle via DaemonRuntime.create(),
-  //     a background spawn would race with it causing "Daemon already running".
-  //   - `identity generate`: may overwrite the PEM file; starting daemons with the
-  //     old principal would create orphan processes unreachable by the new identity.
+  // Background daemon warm-up: silently ensure standard daemons (default, Mail)
+  // are always running. Skip only for `vetkey serve` (avoid self-race) and
+  // `identity generate` (PEM file may not exist yet).
   const isVetkeyServe = moduleName === 'vetkey' && process.argv[3] === 'serve';
   const isIdentityGenerate = moduleName === 'identity' && process.argv[3] === 'generate';
   if (!isVetkeyServe && !isIdentityGenerate) {
     try {
-      // Resolve which PEM to use: respect --identity=<path> if provided,
-      // otherwise fall back to DEFAULT_PEM_PATH. We do NOT call getPemPath()
-      // because it auto-creates the default PEM — we only want to start
-      // daemons when the user already has an identity.
       const identityArg = process.argv.find(a => a.startsWith('--identity='));
       const pemPath = identityArg
-        ? identityArg.split('=').slice(1).join('=')  // support paths containing '='
+        ? identityArg.split('=').slice(1).join('=')
         : DEFAULT_PEM_PATH;
-
       if (fs.existsSync(pemPath)) {
         const identity = loadIdentityFromPath(pemPath);
         const principal = identity.getPrincipal().toText();
         ensureDaemonsBackground(pemPath, principal);
       }
     } catch {
-      // Silently ignore — daemon health check must never block the main command
+      // Silently ignore — daemon warm-up is best-effort
     }
   }
 

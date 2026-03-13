@@ -24,7 +24,7 @@
  * Usage: zcloak-ai vetkey <sub-command> [options]
  */
 
-import { readFileSync, statSync, writeFileSync, existsSync, mkdirSync, openSync, closeSync } from 'fs';
+import { readFileSync, statSync, writeFileSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync } from 'fs';
 import { basename, dirname } from 'path';
 import { createConnection } from 'net';
 import { spawn } from 'child_process';
@@ -40,7 +40,7 @@ import type { Session } from './session.js';
 import * as cryptoOps from './crypto.js';
 import { KeyStore } from './key-store.js';
 import { runDaemonUds, runDaemonStdio } from './serve.js';
-import { findRunningDaemon, isDaemonAlive, socketPath } from './daemon.js';
+import { isDaemonAlive, socketPath } from './daemon.js';
 import { ToolError, canisterCallError } from './error.js';
 
 /**
@@ -488,23 +488,60 @@ async function cmdStop(session: Session): Promise<void> {
 
   const principal = session.getPrincipal();
   const derivationId = `${principal}:${keyName}`;
-  const sockPath = findRunningDaemon(derivationId);
+  const sockPath = socketPath(derivationId);
 
-  // Connect to socket and send shutdown
-  const response = await sendRpcToSocket(sockPath, {
-    id: 1,
-    method: "shutdown",
-  });
+  // Try to stop via socket if:
+  //   1. isDaemonAlive() says yes (PID + socket both present), OR
+  //   2. PID file is missing/corrupt but socket file still exists — the daemon
+  //      process may be alive with an orphaned socket. Attempt a shutdown via
+  //      the socket so we don't leave an unmanageable orphan process.
+  const alive = isDaemonAlive(derivationId);
+  const socketExists = existsSync(sockPath);
 
-  if (jsonOutput) {
-    console.log(JSON.stringify(response));
-  } else {
-    console.log("Daemon stopped successfully.");
+  if (!alive && !socketExists) {
+    if (jsonOutput) {
+      console.log(JSON.stringify({ status: "not_running", key_name: keyName }));
+    } else {
+      console.log(`Daemon '${keyName}' is not running. Nothing to stop.`);
+    }
+    return;
+  }
+
+  try {
+    const response = await sendRpcToSocket(sockPath, {
+      id: 1,
+      method: "shutdown",
+    });
+
+    if (jsonOutput) {
+      console.log(JSON.stringify(response));
+    } else {
+      console.log("Daemon stopped successfully.");
+    }
+  } catch (e) {
+    // Socket file exists but connection failed — stale socket, clean it up
+    if (socketExists && !alive) {
+      safeUnlinkPath(sockPath);
+      if (jsonOutput) {
+        console.log(JSON.stringify({ status: "not_running", key_name: keyName, note: "cleaned up stale socket" }));
+      } else {
+        console.log(`Daemon '${keyName}' is not running (cleaned up stale socket).`);
+      }
+    } else {
+      throw e;
+    }
   }
 }
 
 /**
- * status: Query a running daemon.
+ * status: Query daemon status.
+ *
+ * For standard daemons (default, Mail): auto-starts if not running, so users
+ * never need to manually launch a daemon before querying its status.
+ *
+ * For custom key names: only reports the current state — does NOT auto-start,
+ * since custom daemons require explicit `vetkey serve` to start. This keeps
+ * `status` side-effect-free for non-standard daemons.
  */
 async function cmdStatus(session: Session): Promise<void> {
   const args = session.args;
@@ -512,9 +549,28 @@ async function cmdStatus(session: Session): Promise<void> {
   const keyName = (args['key-name'] as string) || 'default';
   const jsonOutput = !!args['json'];
 
-  const principal = session.getPrincipal();
-  const derivationId = `${principal}:${keyName}`;
-  const sockPath = findRunningDaemon(derivationId);
+  const isStandard = (STANDARD_DAEMON_KEY_NAMES as readonly string[]).includes(keyName);
+  let sockPath: string;
+
+  if (isStandard) {
+    // Standard daemon: auto-start if needed
+    sockPath = await ensureDaemon(session, keyName);
+  } else {
+    // Custom daemon: report-only, no auto-start
+    const principal = session.getPrincipal();
+    const derivationId = `${principal}:${keyName}`;
+
+    if (!isDaemonAlive(derivationId)) {
+      if (jsonOutput) {
+        console.log(JSON.stringify({ status: "not_running", key_name: keyName }));
+      } else {
+        console.log(`Daemon '${keyName}' is not running. Use 'zcloak-ai vetkey serve --key-name=${keyName}' to start it.`);
+      }
+      return;
+    }
+
+    sockPath = socketPath(derivationId);
+  }
 
   // Connect to socket and send status
   const response = await sendRpcToSocket(sockPath, {
@@ -672,8 +728,12 @@ async function ensureDaemon(session: Session, keyName: string): Promise<string> 
  * @param pemPath   - Path to the identity PEM file
  * @param principal - The principal ID derived from the PEM
  */
-export function ensureDaemonsBackground(pemPath: string, principal: string): void {
-  for (const keyName of STANDARD_DAEMON_KEY_NAMES) {
+export function ensureDaemonsBackground(
+  pemPath: string,
+  principal: string,
+): void {
+  const keyNames = STANDARD_DAEMON_KEY_NAMES;
+  for (const keyName of keyNames) {
     const derivationId = `${principal}:${keyName}`;
 
     try {
@@ -692,6 +752,11 @@ export function ensureDaemonsBackground(pemPath: string, principal: string): voi
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/** Safely delete a file, ignoring errors if it doesn't exist */
+function safeUnlinkPath(filePath: string): void {
+  try { unlinkSync(filePath); } catch { /* ignore */ }
+}
 
 /**
  * Generate default output path for encrypted files.

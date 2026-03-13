@@ -112,43 +112,49 @@ function isProcessAlive(pid: number): boolean {
 /**
  * Check whether a daemon for the given derivation ID is alive.
  *
- * Unlike `findRunningDaemon()` which throws on missing daemons, this function
- * returns a simple boolean — suitable for pre-checks where the caller wants to
+ * Returns a simple boolean — suitable for pre-checks where the caller wants to
  * decide whether to auto-start a daemon without catching exceptions.
  *
- * Checks:
- *   1. PID file exists for the derivation ID
- *   2. The recorded PID is still alive (kill -0)
- *   3. Socket file exists (daemon is connectable)
+ * Checks (in order):
+ *   1. If PID file exists and the recorded PID is alive → return socket exists
+ *   2. If PID file is missing/corrupt but socket file exists → return true
+ *      (conservatively assume the daemon is alive to prevent orphan creation;
+ *      callers like cmdStop should attempt socket shutdown in this case)
+ *   3. If neither PID nor socket exists → return false
  *
- * If stale PID/socket files are found (process dead), they are cleaned up.
+ * If stale PID/socket files are found (process confirmed dead), they are
+ * cleaned up.
  *
  * @param derivationId - Full derivation ID (e.g. "{principal}:Mail")
- * @returns true if the daemon is running and connectable
+ * @returns true if the daemon is (or may be) running and connectable
  */
 export function isDaemonAlive(derivationId: string): boolean {
   const pid = pidPath(derivationId);
   const sock = socketPath(derivationId);
 
-  // No PID file → definitely not running
-  if (!existsSync(pid)) return false;
+  if (existsSync(pid)) {
+    try {
+      const pidStr = readFileSync(pid, "utf-8").trim();
+      const existingPid = parseInt(pidStr, 10);
 
-  try {
-    const pidStr = readFileSync(pid, "utf-8").trim();
-    const existingPid = parseInt(pidStr, 10);
+      if (isNaN(existingPid) || !isProcessAlive(existingPid)) {
+        // Process is confirmed dead — clean up stale files
+        safeUnlink(pid);
+        safeUnlink(sock);
+        return false;
+      }
 
-    if (isNaN(existingPid) || !isProcessAlive(existingPid)) {
-      // Process is dead — clean up stale files
-      safeUnlink(pid);
-      safeUnlink(sock);
-      return false;
+      // PID is alive — also verify socket file exists
+      return existsSync(sock);
+    } catch {
+      // PID file read error — fall through to socket-only check
     }
-
-    // Process is alive — also verify socket file exists
-    return existsSync(sock);
-  } catch {
-    return false;
   }
+
+  // No PID file (or unreadable). If socket file still exists, conservatively
+  // treat the daemon as alive to prevent callers from spawning a new daemon
+  // that would delete the socket and orphan the existing process.
+  return existsSync(sock);
 }
 
 // ============================================================================
@@ -282,50 +288,6 @@ export class DaemonRuntime {
   destroy(): void {
     this.cleanup();
   }
-}
-
-/**
- * Find the socket path for a running daemon (used by stop/status commands).
- *
- * Checks if the socket file exists and the daemon is actually running
- * (via PID file check).
- *
- * @param derivationId - Derivation ID to look up
- * @returns Socket path if daemon is running
- * @throws ToolError if no running daemon is found
- */
-export function findRunningDaemon(derivationId: string): string {
-  const sock = socketPath(derivationId);
-  const pid = pidPath(derivationId);
-
-  if (!existsSync(sock)) {
-    throw daemonError(
-      `No running daemon found for derivation_id '${derivationId}'. ` +
-      `Socket file not found: ${sock}`,
-    );
-  }
-
-  // Optionally verify the PID is still alive
-  if (existsSync(pid)) {
-    try {
-      const pidStr = readFileSync(pid, "utf-8").trim();
-      const existingPid = parseInt(pidStr, 10);
-      if (!isNaN(existingPid) && !isProcessAlive(existingPid)) {
-        // Stale files — clean up
-        safeUnlink(sock);
-        safeUnlink(pid);
-        throw daemonError(
-          `Daemon for '${derivationId}' is no longer running (PID ${existingPid} is dead). ` +
-          `Stale files have been cleaned up.`,
-        );
-      }
-    } catch (e) {
-      if (e instanceof Error && e.name === "ToolError") throw e;
-      // Corrupted PID file but socket exists — try connecting anyway
-    }
-  }
-
-  return sock;
 }
 
 // ============================================================================
