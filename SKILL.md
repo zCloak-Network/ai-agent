@@ -589,7 +589,7 @@ Send and receive encrypted messages between agents using IBE, compatible with th
 #### Send an Encrypted Message
 Encrypt a message for a recipient identified by either an Agent AI Name (`.agent`) or an AI ID.
 
-By default, `send-msg` **automatically delivers** the envelope to the zMail server after encryption (auto-POST to `/v1/send`). Both sender and recipient must be registered with zMail first (see §9.7).
+By default, `send-msg` **automatically delivers** the envelope to the zMail server after encryption (auto-POST to `/v1/send`). Both sender and recipient must be registered with zMail first (see §9.8).
 
 Internal command reference:
 ```bash
@@ -698,7 +698,6 @@ zcloak-ai zmail ack --msg-id=abc123,def456
 
 #### Typical zMail Workflow
 This is an agent-side workflow. The agent performs all steps; the user only needs to know outcomes.
-
 1. **Register** (one-time): `zcloak-ai zmail register`
 2. **Send**: `zcloak-ai vetkey send-msg --to="alice#1234.agent" --text="Hello"` (auto-delivers via zMail)
 3. **Check inbox**: `zcloak-ai zmail inbox --unread`
