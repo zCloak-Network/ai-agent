@@ -148,6 +148,7 @@ function showHelp(): void {
   console.log('  --duration=<dur>        Grant duration: 30d, 1y, permanent (for grant)');
   console.log('  --grant-id=<id>         Grant ID (for revoke)');
   console.log('  --to=<AI-ID|principal>  Recipient AI-ID or principal (for send-msg)');
+  console.log('  --reply=<msg_id>        Reply to a parent message (for send-msg)');
   console.log('  --data=<json>           Encrypted message JSON envelope (for recv-msg)');
   console.log('  --no-zmail              Skip auto-POST to zMail (send-msg only)');
   console.log('  --zmail-url=<url>       Override zMail server URL');
@@ -1135,7 +1136,7 @@ export interface Kind17Envelope {
   created_at: number;
   /** Tags carrying recipient and optional metadata */
   tags: EnvelopeTag[];
-  /** Encrypted content: base64 IBE ciphertext (string for single recipient) */
+  /** Encrypted content: JSON string per zmail-skill spec {"v":1,"type":"text"|"file","ct":"<base64>"} */
   content: string;
   /** BIP-340 Schnorr signature over the envelope ID */
   sig: string;
@@ -1219,7 +1220,7 @@ export function schnorrPubkeyFromSpki(spkiHex: string): string {
  *
  * @param session  - CLI session (provides identity for Schnorr signing)
  * @param tags     - Envelope tags (must include at least one ["to", ...])
- * @param content  - Encrypted content string (base64 IBE ciphertext)
+ * @param content  - Encrypted content JSON string: {"v":1,"type":"text"|"file","ct":"<base64>"}
  * @returns Signed Kind17Envelope ready for JSON serialization
  */
 function buildSignedEnvelope(
@@ -1258,6 +1259,7 @@ function buildSignedEnvelope(
  *   --to=<AI-ID or principal>   (required) Recipient identifier
  *   --text=<content>            Text message to encrypt
  *   --file=<path>               File to encrypt
+ *   --reply=<msg_id>            Parent message ID (for reply threads)
  *   --json                      Output in JSON format (default: true for send-msg)
  */
 async function cmdSendMsg(session: Session): Promise<void> {
@@ -1267,6 +1269,12 @@ async function cmdSendMsg(session: Session): Promise<void> {
   const to = rawTo as string | undefined;
   const text = args['text'] as string | boolean | undefined;
   const file = args['file'] as string | boolean | undefined;
+  const rawReply = args['reply'];
+  if (rawReply === true) throw new Error('--reply requires a message ID value');
+  if (typeof rawReply === 'string' && rawReply.length === 0) {
+    throw new Error('--reply requires a non-empty message ID');
+  }
+  const replyMsgId = rawReply as string | undefined;
 
   if (!to) {
     throw new Error('--to=<AI-ID or principal> is required');
@@ -1312,6 +1320,11 @@ async function cmdSendMsg(session: Session): Promise<void> {
   const ciphertext = cryptoOps.ibeEncrypt(dpkBytes, ibeIdentity, plaintext);
   const contentBase64 = Buffer.from(ciphertext).toString('base64');
 
+  // Wrap ciphertext in the standardized message composition format per zmail-skill spec.
+  // Shape: {"v":1,"type":"text"|"file","ct":"<base64-ciphertext>"}
+  // The outer Kind17 envelope carries routing metadata; only the body is encrypted.
+  const content = JSON.stringify({ v: 1, type: payloadType, ct: contentBase64 });
+
   // Build tags: recipient + metadata
   const tags: EnvelopeTag[] = [
     ['to', recipientPrincipal],
@@ -1321,9 +1334,13 @@ async function cmdSendMsg(session: Session): Promise<void> {
   if (filename) {
     tags.push(['filename', filename]);
   }
+  // Include reply tag when responding to an existing message
+  if (replyMsgId) {
+    tags.push(['reply', replyMsgId]);
+  }
 
   // Build and sign the Kind17 envelope
-  const envelope = buildSignedEnvelope(session, tags, contentBase64);
+  const envelope = buildSignedEnvelope(session, tags, content);
 
   // Output the envelope as JSON (always JSON for machine consumption)
   console.log(JSON.stringify(envelope));
@@ -1397,6 +1414,35 @@ async function cmdRecvMsg(session: Session): Promise<void> {
   // Returns true only if full Schnorr signature + principal binding was verified.
   const verifiedSender = verifyKind17Signature(envelope);
 
+  // Extract the IBE ciphertext from the content field.
+  // Content follows the zmail-skill message composition spec:
+  // {"v":1,"type":"text"|"file","ct":"<base64-ciphertext>"}
+  let ciphertextBase64: string;
+  try {
+    const parsed = JSON.parse(envelope.content) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object' || parsed.v !== 1 || typeof parsed.ct !== 'string') {
+      throw new Error('Invalid message composition format: missing v=1 or ct field');
+    }
+    // Validate type field exists and matches one of the allowed payload types
+    if (parsed.type !== 'text' && parsed.type !== 'file') {
+      throw new Error(
+        `Invalid message composition format: type must be "text" or "file", got "${String(parsed.type)}"`,
+      );
+    }
+    // Verify consistency between the composition type and the envelope payload_type tag
+    if (parsed.type !== payloadType) {
+      throw new Error(
+        `Message composition type "${parsed.type}" does not match envelope payload_type tag "${payloadType}"`,
+      );
+    }
+    ciphertextBase64 = parsed.ct;
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      throw new Error('Invalid message composition format: content is not valid JSON');
+    }
+    throw e;
+  }
+
   // Ensure Mail daemon is running (auto-start if needed, wait for ready), then decrypt
   const sockPath = await ensureDaemon(session, 'Mail');
   const response = await sendRpcToSocket(sockPath, {
@@ -1404,7 +1450,7 @@ async function cmdRecvMsg(session: Session): Promise<void> {
     method: 'ibe-decrypt',
     params: {
       ibe_identity: ibeId,
-      ciphertext_base64: envelope.content,
+      ciphertext_base64: ciphertextBase64,
     },
   });
 

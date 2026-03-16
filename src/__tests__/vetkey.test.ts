@@ -142,7 +142,7 @@ describe('vetkey encrypted messaging', () => {
     const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
     const session = mockSession(
       ['send-msg'],
-      { to: recipient, text: 'hello mail' },
+      { to: recipient, text: 'hello mail', 'no-zmail': true },
       sender,
     );
 
@@ -155,10 +155,16 @@ describe('vetkey encrypted messaging', () => {
     expect(typeof envelope.id).toBe('string');
     expect((envelope.id as string).length).toBe(64); // SHA-256 hex
     expect(typeof envelope.created_at).toBe('number');
-    expect(typeof envelope.content).toBe('string');
-    expect((envelope.content as string).length).toBeGreaterThan(0);
     expect(typeof envelope.sig).toBe('string');
     expect((envelope.sig as string).length).toBeGreaterThan(0);
+
+    // Content follows zmail-skill message composition format: {"v":1,"type":"text","ct":"<base64>"}
+    expect(typeof envelope.content).toBe('string');
+    const parsed = JSON.parse(envelope.content as string);
+    expect(parsed.v).toBe(1);
+    expect(parsed.type).toBe('text');
+    expect(typeof parsed.ct).toBe('string');
+    expect(parsed.ct.length).toBeGreaterThan(0);
 
     // Tags carry recipient, metadata, and sender's SPKI for verification
     const tags = envelope.tags as string[][];
@@ -173,6 +179,54 @@ describe('vetkey encrypted messaging', () => {
     expect(envelope.from).toBeUndefined();
     expect(envelope.ct).toBeUndefined();
     expect(envelope.ts).toBeUndefined();
+  });
+
+  it('send-msg includes reply tag when --reply is provided', async () => {
+    const sender = Secp256k1KeyIdentity.generate();
+    const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
+    const parentMsgId = 'msg_parent_abc123';
+    const session = mockSession(
+      ['send-msg'],
+      { to: recipient, text: 'this is a reply', reply: parentMsgId, 'no-zmail': true },
+      sender,
+    );
+
+    await run(session);
+
+    const envelope = readLastJsonLog();
+    const tags = envelope.tags as string[][];
+    expect(tags).toEqual(expect.arrayContaining([
+      ['reply', parentMsgId],
+    ]));
+  });
+
+  it('send-msg omits reply tag when --reply is not provided', async () => {
+    const sender = Secp256k1KeyIdentity.generate();
+    const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
+    const session = mockSession(
+      ['send-msg'],
+      { to: recipient, text: 'no reply', 'no-zmail': true },
+      sender,
+    );
+
+    await run(session);
+
+    const envelope = readLastJsonLog();
+    const tags = envelope.tags as string[][];
+    const replyTags = tags.filter(t => t[0] === 'reply');
+    expect(replyTags).toHaveLength(0);
+  });
+
+  it('send-msg rejects empty --reply value', async () => {
+    const sender = Secp256k1KeyIdentity.generate();
+    const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
+    const session = mockSession(
+      ['send-msg'],
+      { to: recipient, text: 'reply to nothing', reply: '', 'no-zmail': true },
+      sender,
+    );
+
+    await expect(run(session)).rejects.toThrow('--reply requires a non-empty message ID');
   });
 
   it('send-msg rejects invalid raw principal recipients', async () => {
@@ -235,6 +289,8 @@ describe('vetkey encrypted messaging', () => {
     await run(recvSession);
 
     expect(fs.readFileSync(outputPath)).toEqual(payload);
+    // The daemon receives the extracted ct field from the message composition JSON,
+    // not the raw envelope.content (which is now {"v":1,"type":"file","ct":"AQIDBA=="})
     expect(lastSocketRequest).toEqual({
       id: 1,
       method: 'ibe-decrypt',
