@@ -11,7 +11,7 @@
  *   decrypt         Decrypt Kind5 PrivatePost by event ID
  *   encrypt-only    Encrypt locally without canister sign
  *   pubkey          Get IBE public key from canister
- *   serve           Start daemon (UDS or stdio mode)
+ *   serve           Start daemon (Unix Domain Socket)
  *   stop            Stop a running daemon
  *   status          Query daemon status
  *   grant           Grant Kind5 decryption access to another user
@@ -39,7 +39,7 @@ import { hexToBytes, bytesToHex } from '@noble/hashes/utils';
 import type { Session } from './session.js';
 import * as cryptoOps from './crypto.js';
 import { KeyStore } from './key-store.js';
-import { runDaemonUds, runDaemonStdio } from './serve.js';
+import { runDaemonUds } from './serve.js';
 import { isDaemonAlive, socketPath } from './daemon.js';
 import { ToolError, canisterCallError } from './error.js';
 import * as log from './log.js';
@@ -138,7 +138,7 @@ function showHelp(): void {
   console.log('  --file=<path>           File to encrypt');
   console.log('  --event-id=<id>         Event ID for decryption');
   console.log('  --output=<path>         Output file path');
-  // --key-name and --stdio are internal daemon options, not shown to users
+  // --key-name is an internal daemon option, not shown to users
   console.log('  --public-key=<hex>      IBE public key for offline encryption');
   console.log('  --ibe-identity=<id>     IBE identity for offline encryption');
   console.log('  --tags=<json>           Tags as JSON array');
@@ -435,18 +435,23 @@ async function cmdGetPubkey(session: Session): Promise<void> {
 }
 
 /**
- * serve: Start daemon in UDS or stdio mode.
+ * serve: Start daemon over Unix Domain Socket.
  *
  * Creates its own long-lived actor for the daemon lifecycle,
  * using the Session's identity for authentication.
  */
 async function cmdServe(session: Session): Promise<void> {
   const args = session.args;
+
+  // --stdio mode has been removed; reject explicitly so old callers fail fast
+  if (args['stdio']) {
+    throw new Error("--stdio mode is no longer supported. The daemon now uses Unix Domain Socket (UDS) exclusively.");
+  }
+
   const rawKeyName = args['key-name'];
-  // Guard against boolean flag (e.g. --key-name --stdio parses --key-name as true)
+  // Guard against boolean flag (e.g. --key-name without value parses as true)
   if (rawKeyName === true) throw new Error("--key-name requires a value (e.g. --key-name=mykey)");
   const keyName = (rawKeyName as string) || 'default';
-  const stdio = !!args['stdio'];
 
   // Validate key_name
   if (keyName.includes(":")) throw new Error("key_name must not contain ':' (reserved as separator)");
@@ -465,11 +470,7 @@ async function cmdServe(session: Session): Promise<void> {
   const keyStore = await KeyStore.deriveFromActor(actor, derivationId);
   log.info("Key derived successfully. Starting JSON-RPC daemon...");
 
-  if (stdio) {
-    await runDaemonStdio(keyStore, principal, derivationId);
-  } else {
-    await runDaemonUds(keyStore, principal, derivationId);
-  }
+  await runDaemonUds(keyStore, principal, derivationId);
 }
 
 /**
@@ -583,10 +584,7 @@ async function cmdStatus(session: Session): Promise<void> {
       console.log(`  Derivation ID: ${result.derivation_id}`);
       console.log(`  Principal:     ${result.principal}`);
       console.log(`  Started At:    ${result.started_at}`);
-      console.log(`  Mode:          ${result.mode}`);
-      if (result.socket_path) {
-        console.log(`  Socket:        ${result.socket_path}`);
-      }
+      console.log(`  Socket:        ${result.socket_path}`);
     } else if (response.error) {
       log.error(`Error: ${response.error}`);
     }

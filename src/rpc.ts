@@ -1,5 +1,5 @@
 /**
- * JSON-RPC Protocol Types — newline-delimited JSON over stdin/stdout or Unix Socket
+ * JSON-RPC Protocol Types — newline-delimited JSON over Unix Domain Socket
  *
  * Protocol specification:
  *   - One JSON object per line (newline-delimited)
@@ -11,8 +11,8 @@
  *   decrypt      — Decrypt file or inline data using the held AES-256 key
  *   ibe-decrypt  — Decrypt IBE ciphertext using cached VetKey (Mail daemon mode)
  *   status       — Query daemon status (derivation_id, principal, uptime)
- *   quit         — Close current connection (UDS mode) or stop daemon (stdio mode)
- *   shutdown     — Stop the entire daemon gracefully (UDS mode only)
+ *   quit         — Close current client connection
+ *   shutdown     — Stop the entire daemon gracefully
  */
 
 // ============================================================================
@@ -126,9 +126,7 @@ export interface StatusResult {
   principal: string;
   /** Daemon start timestamp (ISO 8601) */
   started_at: string;
-  /** Daemon mode: "uds" or "stdio" */
-  mode?: string;
-  /** Unix socket path (UDS mode only) */
+  /** Unix socket path */
   socket_path?: string;
 }
 

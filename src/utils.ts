@@ -59,7 +59,7 @@ export function computePow(base: string, zeros?: number): PowResult {
  * Known boolean-only flags that never take a value argument.
  * Used by parseArgs to avoid consuming the next positional arg as a value.
  */
-const BOOLEAN_FLAGS = new Set(['json', 'stdio', 'help', 'version']);
+const BOOLEAN_FLAGS = new Set(['json', 'help', 'version']);
 
 /**
  * Parse command line arguments into a structured object.

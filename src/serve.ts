@@ -1,18 +1,9 @@
 /**
- * Daemon Serve — JSON-RPC over Unix Domain Socket or stdin/stdout
+ * Daemon Serve — JSON-RPC over Unix Domain Socket
  *
- * Two operational modes:
- *
- * 1. UDS mode (default): Unix Domain Socket listener, supports concurrent clients.
- *    The daemon creates a socket file and listens for connections. Each client
- *    connection is handled independently. "quit" closes the connection;
- *    "shutdown" stops the entire daemon.
- *
- * 2. Stdio mode (--stdio): Legacy stdin/stdout mode, single client.
- *    Backwards-compatible with the Rust implementation. Reads JSON-RPC from
- *    stdin and writes responses to stdout. "quit" stops the daemon.
- *
- * Both modes share the same request handling logic (handleRequest).
+ * The daemon creates a socket file and listens for connections. Each client
+ * connection is handled independently. "quit" closes the connection;
+ * "shutdown" stops the entire daemon.
  *
  * Trust model:
  *   - The daemon trusts its callers (local AI agent processes or socket clients).
@@ -25,7 +16,6 @@ import { createInterface } from 'readline';
 import { readFileSync, writeFileSync, statSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import type { Readable, Writable } from 'stream';
 import { KeyStore } from './key-store.js';
 import { DaemonRuntime } from './daemon.js';
 import {
@@ -73,8 +63,7 @@ function handleRequest(
   keyStore: KeyStore,
   principal: string,
   startedAt: string,
-  mode: "uds" | "stdio",
-  sockPath?: string,
+  sockPath: string,
 ): HandleResult {
   const { id, method } = req;
 
@@ -109,21 +98,20 @@ function handleRequest(
         derivation_id: keyStore.derivationId,
         principal,
         started_at: startedAt,
-        mode,
         socket_path: sockPath,
       };
       return { response: successResponse(id, status), action: "continue" };
     }
 
     case "quit":
-      // In stdio mode: quit stops the daemon. In UDS mode: quit closes the connection.
+      // Close this client connection only
       return {
-        response: successResponse(id, { message: mode === "stdio" ? "Shutting down, key zeroized" : "Connection closed" }),
-        action: mode === "stdio" ? "shutdown" : "quit",
+        response: successResponse(id, { message: "Connection closed" }),
+        action: "quit",
       };
 
     case "shutdown":
-      // Stop the entire daemon (both modes)
+      // Stop the entire daemon
       return {
         response: successResponse(id, { message: "Shutting down, key zeroized" }),
         action: "shutdown",
@@ -399,7 +387,7 @@ function readFileChecked(filePath: string): Buffer | { error: string } {
 }
 
 // ============================================================================
-// UDS Mode (Default)
+// UDS Daemon
 // ============================================================================
 
 /**
@@ -458,7 +446,6 @@ export function runDaemonUds(
           keyStore,
           principal,
           startedAt,
-          "uds",
           sockPath,
         );
 
@@ -574,86 +561,6 @@ export function runDaemonUds(
       log.info("Daemon stopped. Key has been zeroized.");
       resolve();
     }
-  });
-}
-
-// ============================================================================
-// Stdio Mode (Legacy, --stdio)
-// ============================================================================
-
-/**
- * Run the JSON-RPC daemon over stdin/stdout (legacy mode).
- *
- * Reads one JSON-RPC request per line from stdin, processes it,
- * and writes the response to stdout. Exits on "quit" or stdin EOF.
- *
- * This mode is backwards-compatible with the Rust vetkey-tool implementation.
- * No PID file or socket file is created.
- *
- * @param keyStore - AES-256 key holder (consumed; destroyed on exit)
- * @param principal - Authenticated principal text
- * @param derivationId - Derivation ID used for the key
- * @param input - Optional input stream (defaults to process.stdin, override for testing)
- * @param output - Optional output stream (defaults to process.stdout, override for testing)
- */
-export function runDaemonStdio(
-  keyStore: KeyStore,
-  principal: string,
-  derivationId: string,
-  input?: Readable,
-  output?: Writable,
-): Promise<void> {
-  return new Promise<void>((resolve) => {
-    const stdin = input ?? process.stdin;
-    const stdout = output ?? process.stdout;
-    const startedAt = new Date().toISOString();
-
-    // Emit ready signal to stdout (same format as Rust version)
-    const readyMsg = JSON.stringify({
-      ready: true,
-      derivation_id: derivationId,
-      principal,
-      started_at: startedAt,
-    });
-    stdout.write(readyMsg + "\n");
-
-    // Read input line by line
-    const rl = createInterface({ input: stdin });
-
-    rl.on("line", (line: string) => {
-      if (!line.trim()) return; // Skip blank lines
-
-      // Parse the request
-      const parsed = parseRpcRequest(line);
-      if (isErrorResponse(parsed)) {
-        stdout.write(JSON.stringify(parsed) + "\n");
-        return;
-      }
-
-      // Handle the request
-      const { response, action } = handleRequest(
-        parsed,
-        keyStore,
-        principal,
-        startedAt,
-        "stdio",
-      );
-
-      stdout.write(JSON.stringify(response) + "\n");
-
-      if (action === "shutdown" || action === "quit") {
-        // In stdio mode, both quit and shutdown stop the daemon
-        rl.close();
-        keyStore.destroy();
-        resolve();
-      }
-    });
-
-    // stdin EOF — daemon exits
-    rl.on("close", () => {
-      keyStore.destroy();
-      resolve();
-    });
   });
 }
 

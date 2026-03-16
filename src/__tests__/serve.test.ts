@@ -1,5 +1,5 @@
 /**
- * Tests for serve.ts — JSON-RPC daemon via UDS and stdio modes
+ * Tests for serve.ts — JSON-RPC daemon via Unix Domain Socket
  *
  * These tests verify:
  * 1. UDS daemon startup and shutdown
@@ -7,20 +7,17 @@
  * 3. Encrypt/decrypt file data via UDS connection
  * 4. Status query
  * 5. Unknown method handling
- * 6. Stdio daemon startup, encrypt/decrypt, and shutdown
- * 7. Stdio daemon graceful exit on input stream close (EOF)
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { createConnection } from 'net';
 import { createInterface } from 'readline';
-import { PassThrough } from 'stream';
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import crypto from 'crypto';
 import { KeyStore } from '../key-store.js';
-import { runDaemonUds, runDaemonStdio } from '../serve.js';
+import { runDaemonUds } from '../serve.js';
 import { socketPath, pidPath } from '../daemon.js';
 
 // ============================================================================
@@ -149,7 +146,6 @@ describe('UDS Daemon', () => {
     expect(statusResp.id).toBe(1);
     expect((statusResp.result as Record<string, unknown>).status).toBe('running');
     expect((statusResp.result as Record<string, unknown>).principal).toBe('test-principal');
-    expect((statusResp.result as Record<string, unknown>).mode).toBe('uds');
 
     // Shutdown
     const shutdownResp = await sendRpc(sockPath, { id: 2, method: 'shutdown' });
@@ -248,251 +244,122 @@ describe('UDS Daemon', () => {
     await sendRpc(sockPath, { id: 99, method: 'shutdown' });
     await daemonPromise;
   });
-});
-
-// ============================================================================
-// Stdio Daemon Tests
-// ============================================================================
-
-describe('Stdio Daemon', () => {
-  /**
-   * Helper: wait until the output stream has at least `count` complete JSON lines.
-   * Uses polling since PassThrough doesn't emit line-level events.
-   */
-  function waitForLines(output: PassThrough, count: number, timeoutMs = 3000): Promise<Record<string, unknown>[]> {
-    return new Promise((resolve, reject) => {
-      let buffer = '';
-      let timer: ReturnType<typeof setTimeout>;
-      let resolved = false;
-
-      const finish = (lines: string[]) => {
-        if (resolved) return;
-        resolved = true;
-        output.removeListener('data', onData);
-        clearTimeout(timer);
-        resolve(lines.map(l => JSON.parse(l)));
-      };
-
-      const onData = (chunk: Buffer) => {
-        buffer += chunk.toString();
-        const lines = buffer.split('\n').filter(Boolean);
-        if (lines.length >= count) {
-          finish(lines);
-        }
-      };
-
-      output.on('data', onData);
-
-      // Resume so we get 'data' events (PassThrough starts paused)
-      output.resume();
-
-      timer = setTimeout(() => {
-        if (resolved) return;
-        resolved = true;
-        output.removeListener('data', onData);
-        const lines = buffer.split('\n').filter(Boolean);
-        reject(new Error(`Timeout: only got ${lines.length}/${count} lines`));
-      }, timeoutMs);
-    });
-  }
-
-  it('should emit ready message and respond to status', async () => {
-    const input = new PassThrough();
-    const output = new PassThrough();
-
-    const ks = KeyStore.createForTest('stdio-test:default');
-    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'stdio-test:default', input, output);
-
-    // First line should be the ready message
-    const [readyMsg] = await waitForLines(output, 1);
-    expect(readyMsg.ready).toBe(true);
-    expect(readyMsg.derivation_id).toBe('stdio-test:default');
-    expect(readyMsg.principal).toBe('test-principal');
-
-    // Send status request
-    input.write('{"id":1,"method":"status"}\n');
-    const [statusResp] = await waitForLines(output, 1);
-    expect(statusResp.id).toBe(1);
-    expect((statusResp.result as Record<string, unknown>).status).toBe('running');
-    expect((statusResp.result as Record<string, unknown>).mode).toBe('stdio');
-
-    // Quit
-    input.write('{"id":2,"method":"quit"}\n');
-    await daemonPromise;
-  });
-
-  it('should encrypt and decrypt inline data in stdio mode', async () => {
-    const input = new PassThrough();
-    const output = new PassThrough();
-
-    const ks = KeyStore.createForTest('stdio-enc:default');
-    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'stdio-enc:default', input, output);
-
-    // Skip ready message
-    await waitForLines(output, 1);
-
-    // Encrypt
-    const testData = Buffer.from('stdio encrypt test').toString('base64');
-    input.write(JSON.stringify({ id: 1, method: 'encrypt', params: { data_base64: testData } }) + '\n');
-
-    const [encResp] = await waitForLines(output, 1);
-    expect(encResp.error).toBeUndefined();
-    const encResult = encResp.result as Record<string, unknown>;
-    expect(encResult.data_base64).toBeDefined();
-    // Inline mode should also return output_file with auto-generated path
-    expect(encResult.output_file).toBeDefined();
-    expect(typeof encResult.output_file).toBe('string');
-
-    // Decrypt
-    input.write(JSON.stringify({ id: 2, method: 'decrypt', params: { data_base64: encResult.data_base64 } }) + '\n');
-
-    const [decResp] = await waitForLines(output, 1);
-    expect(decResp.error).toBeUndefined();
-    const decResult = decResp.result as Record<string, unknown>;
-    const decrypted = Buffer.from(decResult.data_base64 as string, 'base64').toString('utf-8');
-    expect(decrypted).toBe('stdio encrypt test');
-
-    // Cleanup auto-generated encrypted file
-    try { unlinkSync(encResult.output_file as string); } catch { /* ignore */ }
-
-    // Quit
-    input.write('{"id":99,"method":"quit"}\n');
-    await daemonPromise;
-  });
-
-  it('should exit gracefully on input stream close (EOF)', async () => {
-    const input = new PassThrough();
-    const output = new PassThrough();
-
-    const ks = KeyStore.createForTest('stdio-eof:default');
-    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'stdio-eof:default', input, output);
-
-    // Wait for ready
-    await waitForLines(output, 1);
-
-    // Close stdin (EOF) — daemon should exit gracefully
-    input.end();
-    await daemonPromise;
-    // If we get here without timeout, the daemon handled EOF correctly
-  });
 
   it('should reject ibe-decrypt when daemon has no IBE support', async () => {
-    const input = new PassThrough();
-    const output = new PassThrough();
+    const { derivId, daemonPromise } = startDaemon();
+    const sockPath = socketPath(derivId);
+    await waitForSocket(sockPath);
 
-    // createForTest does NOT pass vetkeyBytes/dpkBytes → hasIbeSupport=false
-    const ks = KeyStore.createForTest('stdio-noibe:default');
-    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'stdio-noibe:default', input, output);
-
-    // Skip ready
-    await waitForLines(output, 1);
-
-    // Send ibe-decrypt request
-    input.write(JSON.stringify({
+    const resp = await sendRpc(sockPath, {
       id: 1,
       method: 'ibe-decrypt',
       params: { ibe_identity: 'test:Mail', ciphertext_base64: 'AAAA' },
-    }) + '\n');
-
-    const [resp] = await waitForLines(output, 1);
+    });
     expect(resp.error).toBeDefined();
     expect(resp.error).toContain('IBE support');
 
-    // Quit
-    input.write('{"id":2,"method":"quit"}\n');
+    await sendRpc(sockPath, { id: 99, method: 'shutdown' });
     await daemonPromise;
   });
 
   it('should reject ibe-decrypt with missing params', async () => {
-    const input = new PassThrough();
-    const output = new PassThrough();
+    const { derivId, daemonPromise } = startDaemon();
+    const sockPath = socketPath(derivId);
+    await waitForSocket(sockPath);
 
-    const ks = KeyStore.createForTest('stdio-noparams:default');
-    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'stdio-noparams:default', input, output);
-
-    // Skip ready
-    await waitForLines(output, 1);
-
-    // Send ibe-decrypt without params
-    input.write(JSON.stringify({ id: 1, method: 'ibe-decrypt' }) + '\n');
-
-    const [resp] = await waitForLines(output, 1);
+    const resp = await sendRpc(sockPath, { id: 1, method: 'ibe-decrypt' });
     expect(resp.error).toBeDefined();
     expect(resp.error).toContain('Missing');
 
-    // Quit
-    input.write('{"id":2,"method":"quit"}\n');
+    await sendRpc(sockPath, { id: 99, method: 'shutdown' });
     await daemonPromise;
   });
 
   it('should reject ibe-decrypt when ibe_identity does not match the daemon derivation id', async () => {
-    const input = new PassThrough();
-    const output = new PassThrough();
-
+    // Start daemon with IBE support
+    const derivId = `test-uds-ibe-${crypto.randomBytes(4).toString('hex')}`;
     const vetkeyBytes = crypto.randomBytes(48);
     const dpkBytes = new Uint8Array(96);
-    const ks = KeyStore.createForTestWithIbe('test-principal:Mail', vetkeyBytes, dpkBytes);
-    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'test-principal:Mail', input, output);
+    const ks = KeyStore.createForTestWithIbe(derivId, vetkeyBytes, dpkBytes);
+    const daemonPromise = runDaemonUds(ks, 'test-principal', derivId);
+    startedDaemons.push({ derivationId: derivId, keyStore: ks, daemonPromise });
 
-    await waitForLines(output, 1);
+    const sockPath = socketPath(derivId);
+    await waitForSocket(sockPath);
 
-    input.write(JSON.stringify({
+    const resp = await sendRpc(sockPath, {
       id: 1,
       method: 'ibe-decrypt',
       params: { ibe_identity: 'someone-else:Mail', ciphertext_base64: 'QUJDRA==' },
-    }) + '\n');
-
-    const [resp] = await waitForLines(output, 1);
+    });
     expect(resp.error).toContain('ibe_identity mismatch');
 
-    input.write('{"id":2,"method":"quit"}\n');
+    await sendRpc(sockPath, { id: 99, method: 'shutdown' });
     await daemonPromise;
   });
 
   it('should reject ibe-decrypt with invalid base64 ciphertext', async () => {
-    const input = new PassThrough();
-    const output = new PassThrough();
-
+    // Start daemon with IBE support
+    const derivId = `test-uds-b64-${crypto.randomBytes(4).toString('hex')}`;
     const vetkeyBytes = crypto.randomBytes(48);
     const dpkBytes = new Uint8Array(96);
-    const ks = KeyStore.createForTestWithIbe('test-principal:Mail', vetkeyBytes, dpkBytes);
-    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'test-principal:Mail', input, output);
+    const ks = KeyStore.createForTestWithIbe(derivId, vetkeyBytes, dpkBytes);
+    const daemonPromise = runDaemonUds(ks, 'test-principal', derivId);
+    startedDaemons.push({ derivationId: derivId, keyStore: ks, daemonPromise });
 
-    await waitForLines(output, 1);
+    const sockPath = socketPath(derivId);
+    await waitForSocket(sockPath);
 
-    input.write(JSON.stringify({
+    const resp = await sendRpc(sockPath, {
       id: 1,
       method: 'ibe-decrypt',
-      params: { ibe_identity: 'test-principal:Mail', ciphertext_base64: '@@@' },
-    }) + '\n');
-
-    const [resp] = await waitForLines(output, 1);
+      params: { ibe_identity: derivId, ciphertext_base64: '@@@' },
+    });
     expect(resp.error).toContain('Invalid base64 ciphertext');
 
-    input.write('{"id":2,"method":"quit"}\n');
+    await sendRpc(sockPath, { id: 99, method: 'shutdown' });
     await daemonPromise;
   });
 
   it('should handle invalid JSON gracefully', async () => {
-    const input = new PassThrough();
-    const output = new PassThrough();
+    const { derivId, daemonPromise } = startDaemon();
+    const sockPath = socketPath(derivId);
+    await waitForSocket(sockPath);
 
-    const ks = KeyStore.createForTest('stdio-err:default');
-    const daemonPromise = runDaemonStdio(ks, 'test-principal', 'stdio-err:default', input, output);
+    // Send raw invalid JSON over socket
+    await new Promise<void>((resolve, reject) => {
+      const conn = createConnection(sockPath);
+      // Track timeout so we can clear it on success/failure to avoid leaked handles
+      const timer = setTimeout(() => reject(new Error('Timeout')), 5000);
 
-    // Skip ready
-    await waitForLines(output, 1);
+      conn.on('connect', () => {
+        conn.write('this is not json\n');
+      });
 
-    // Send invalid JSON
-    input.write('this is not json\n');
+      const rl = createInterface({ input: conn });
+      rl.on('line', (line: string) => {
+        try {
+          const parsed = JSON.parse(line);
+          expect(parsed.error).toBeDefined();
+          expect(typeof parsed.error).toBe('string');
+          expect(parsed.error).toContain('Invalid JSON');
+          clearTimeout(timer);
+          conn.end();
+          resolve();
+        } catch (e) {
+          clearTimeout(timer);
+          reject(e);
+        }
+      });
 
-    const [errorResp] = await waitForLines(output, 1);
-    expect(errorResp.error).toBeDefined();
-    expect(typeof errorResp.error).toBe('string');
-    expect((errorResp.error as string)).toContain('Invalid JSON');
+      conn.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
 
-    // Quit
-    input.write('{"id":1,"method":"quit"}\n');
+    await sendRpc(sockPath, { id: 99, method: 'shutdown' });
     await daemonPromise;
   });
 });
+
