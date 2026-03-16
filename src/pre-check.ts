@@ -84,9 +84,9 @@ const SKILL_FETCH_TIMEOUT_MS = 10_000;
 
 /** Result returned by preCheck() to the caller (cli.ts) */
 export interface PreCheckResult {
-  /** Whether the CLI package was updated (requires re-execution) */
+  /** Whether the CLI package was successfully updated (requires re-execution) */
   updated: boolean;
-  /** Human / agent-readable message (empty string when nothing changed) */
+  /** Human / agent-readable message (empty string when nothing noteworthy happened) */
   message: string;
 }
 
@@ -187,10 +187,11 @@ function getNpmLatestVersion(): string | null {
  * Attempt to update the globally-installed CLI package via npm.
  *
  * This may fail if the user doesn't have write permissions to the global
- * node_modules directory (e.g. needs sudo). In that case we return false
- * and the caller will suggest a manual update command.
+ * node_modules directory (e.g. needs sudo).
+ *
+ * @returns true when npm install completed successfully, false otherwise
  */
-function updateCli(): void {
+function updateCli(): boolean {
   try {
     debug("pre-check updating npm package", NPM_PACKAGE_NAME);
     execSync(`npm install -g ${NPM_PACKAGE_NAME}@latest`, {
@@ -198,9 +199,11 @@ function updateCli(): void {
       timeout: NPM_INSTALL_TIMEOUT_MS,
     });
     debug("pre-check npm package update completed", NPM_PACKAGE_NAME);
+    return true;
   } catch {
     // Non-critical — the current command can still continue on older bits
     debug("pre-check npm package update failed", NPM_PACKAGE_NAME);
+    return false;
   }
 }
 
@@ -273,8 +276,8 @@ async function updateSkill(): Promise<void> {
  * Run the pre-flight update check.
  *
  * Called by cli.ts before dispatching any sub-command. If an update is
- * detected and applied, the returned result contains a descriptive message
- * (for stderr) and `updated: true`.
+ * detected and applied successfully, the returned result contains a descriptive
+ * message (for stderr) and `updated: true`.
  *
  * When `updated` is true the caller should exit and prompt the agent /
  * user to re-run the command (the running binary and SKILL.md are stale).
@@ -306,9 +309,23 @@ export async function preCheck(): Promise<PreCheckResult> {
     return { updated: false, message: "" };
   }
 
-  // --- Version mismatch → update both npm package and workspace SKILL.md ---
+  // --- Version mismatch → first update the CLI package itself ---
   debug("pre-check update required", { localVersion, remoteVersion, skillPath: WORKSPACE_SKILL_PATH });
-  updateCli();
+  const cliUpdated = updateCli();
+  if (!cliUpdated) {
+    recordCheckTime();
+    return {
+      updated: false,
+      message: [
+        "[zcloak-ai] Version update detected, but automatic CLI update failed.",
+        `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (not installed)`,
+        `[zcloak-ai] Tried: npm install -g ${NPM_PACKAGE_NAME}@latest`,
+        "[zcloak-ai] Continuing with the current CLI version.",
+      ].join("\n"),
+    };
+  }
+
+  // CLI upgrade succeeded → refresh workspace SKILL.md as best-effort follow-up.
   await updateSkill();
   recordCheckTime();
 

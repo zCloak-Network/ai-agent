@@ -37,7 +37,7 @@ import { fileURLToPath } from 'url';
 import { Session } from './session.js';
 import { preCheck } from './pre-check.js';
 import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity.js';
-import { STANDARD_DAEMON_KEY_NAMES, spawnDaemonBackground } from './vetkey.js';
+import { STANDARD_DAEMON_KEY_NAMES, startDaemonBackground, stopAllDaemons } from './vetkey.js';
 import { isDaemonAlive } from './daemon.js';
 import * as log from './log.js';
 import { migrateLegacyRuntimeDir } from './compat.js';
@@ -124,7 +124,7 @@ async function main(): Promise<void> {
 
   if (moduleName === 'pre-check') {
     const checkResult = await preCheck();
-    if (checkResult.updated) {
+    if (checkResult.message) {
       log.info(checkResult.message);
     } else {
       log.info('Pre-check complete. No updates were applied.');
@@ -147,8 +147,20 @@ async function main(): Promise<void> {
   // stop so the caller can reload context and re-run on the updated bits.
   const checkResult = await preCheck();
   if (checkResult.updated) {
+    // Stop all running daemons after a successful upgrade — the background
+    // daemons still point at the old package bits. They will be auto-restarted
+    // on the next command invocation via the warm-up logic below.
+    try {
+      await stopAllDaemons();
+    } catch {
+      // Best-effort — don't block upgrade on daemon stop failure
+    }
+
     log.info(checkResult.message);
     process.exit(0);
+  }
+  if (checkResult.message) {
+    log.warn(checkResult.message);
   }
 
   // Construct sub-argv without mutating process.argv.
@@ -193,7 +205,7 @@ async function main(): Promise<void> {
       if (isDaemonAlive(derivationId)) continue;
 
       try {
-        spawnDaemonBackground(pemPath, keyName);
+        startDaemonBackground(pemPath, keyName);
       } catch {
         // Best-effort — ignore spawn failures
       }

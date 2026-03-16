@@ -24,7 +24,7 @@
  * Usage: zcloak-ai vetkey <sub-command> [options]
  */
 
-import { readFileSync, statSync, writeFileSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync } from 'fs';
+import { readFileSync, readdirSync, statSync, writeFileSync, existsSync, mkdirSync, openSync, closeSync, unlinkSync } from 'fs';
 import { basename, dirname } from 'path';
 import { createConnection } from 'net';
 import { spawn } from 'child_process';
@@ -40,13 +40,13 @@ import type { Session } from './session.js';
 import * as cryptoOps from './crypto.js';
 import { KeyStore } from './key-store.js';
 import { runDaemonUds } from './serve.js';
-import { isDaemonAlive, socketPath } from './daemon.js';
-import { ToolError, canisterCallError } from './error.js';
+import { isDaemonAlive, socketPath, runtimeDir } from './daemon.js';
+import { canisterCallError } from './error.js';
 import * as log from './log.js';
 
 /**
  * Absolute path to cli.js (the CLI entry script).
- * Used by spawnDaemonBackground() to spawn daemon child processes via
+ * Used by startDaemonBackground() to spawn daemon child processes via
  * `process.execPath` (the current Node binary) + this script path, so that
  * daemon spawning works regardless of how the CLI was invoked (global install,
  * npx, node dist/cli.js, etc.).
@@ -606,6 +606,34 @@ const DAEMON_POLL_INTERVAL_MS = 500;
 export const STANDARD_DAEMON_KEY_NAMES = ['default', 'Mail'] as const;
 
 /**
+ * Stop ALL running daemons by scanning the runtime directory for .sock files.
+ *
+ * This covers all daemons regardless of principal or key name (standard,
+ * custom, or any --identity), ensuring no stale daemon survives a CLI upgrade.
+ * Errors are silently ignored (best-effort shutdown).
+ */
+export async function stopAllDaemons(): Promise<void> {
+  const dir = runtimeDir();
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return; // Runtime directory doesn't exist — no daemons running
+  }
+
+  const sockFiles = entries.filter(e => e.endsWith('.sock'));
+  for (const sockFile of sockFiles) {
+    const sock = join(dir, sockFile);
+    try {
+      await sendRpcToSocket(sock, { id: 1, method: "shutdown" });
+      log.info(`Daemon stopped (${sockFile}) before upgrade.`);
+    } catch {
+      // Best-effort — daemon may already be gone or socket is stale
+    }
+  }
+}
+
+/**
  * Spawn a daemon process in the background for the given key name.
  *
  * The child process is fully detached (survives parent exit) with stderr
@@ -615,7 +643,7 @@ export const STANDARD_DAEMON_KEY_NAMES = ['default', 'Mail'] as const;
  * @param keyName - Daemon key name (e.g. "default", "Mail")
  * @returns The child process PID (or undefined if spawn failed)
  */
-export function spawnDaemonBackground(pemPath: string, keyName: string): number | undefined {
+export function startDaemonBackground(pemPath: string, keyName: string): number | undefined {
   const logPath = daemonLogPath(keyName);
   const logDir = dirname(logPath);
 
@@ -682,7 +710,7 @@ async function ensureDaemon(session: Session, keyName: string): Promise<string> 
 
   log.info(`${keyName} daemon is not running. Starting it automatically...`);
 
-  const pid = spawnDaemonBackground(session.getPemPath(), keyName);
+  const pid = startDaemonBackground(session.getPemPath(), keyName);
   log.info(`${keyName} daemon spawned (PID: ${pid ?? 'unknown'}). Waiting for ready...`);
 
   // Poll for the socket file to appear (daemon writes PID + creates socket on ready)
