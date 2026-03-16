@@ -2,14 +2,53 @@
  * Tests for zmail.ts — zMail encrypted mail client commands
  *
  * Covers: run() routing, register command (success, already-registered, failure),
- * inbox command (messages, empty, pagination, JSON mode), sent command,
+ * sync command (full, incremental, multi-page), inbox/sent (online + cached modes),
  * ack command, postEnvelopeToZmail (success, error), and ownership proof headers.
- * Uses mocked Session and fetch to avoid real network calls.
+ * Uses mocked Session, fetch, and mailbox-store to avoid real I/O.
  */
 
 import { createHash } from 'crypto';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { Secp256k1KeyIdentity } from '@dfinity/identity-secp256k1';
+
+// Mock mailbox-store before importing zmail
+const {
+  mockReadInbox,
+  mockReadSent,
+  mockWriteInbox,
+  mockWriteSent,
+  mockReadSyncState,
+  mockWriteSyncState,
+  mockMergeMessages,
+  mockCleanupTmpFiles,
+} = vi.hoisted(() => ({
+  mockReadInbox: vi.fn(() => ({ version: 1, synced_at: 0, messages: [] })),
+  mockReadSent: vi.fn(() => ({ version: 1, synced_at: 0, messages: [] })),
+  mockWriteInbox: vi.fn(),
+  mockWriteSent: vi.fn(),
+  mockReadSyncState: vi.fn(() => null),
+  mockWriteSyncState: vi.fn(),
+  mockMergeMessages: vi.fn((existing: unknown[], incoming: unknown[]) => {
+    // Simple merge: de-dup by id, incoming wins
+    const map = new Map<string, unknown>();
+    for (const m of existing) map.set((m as Record<string, unknown>).id as string, m);
+    for (const m of incoming) map.set((m as Record<string, unknown>).id as string, m);
+    return Array.from(map.values());
+  }),
+  mockCleanupTmpFiles: vi.fn(),
+}));
+
+vi.mock('../mailbox-store.js', () => ({
+  readInbox: mockReadInbox,
+  readSent: mockReadSent,
+  writeInbox: mockWriteInbox,
+  writeSent: mockWriteSent,
+  readSyncState: mockReadSyncState,
+  writeSyncState: mockWriteSyncState,
+  mergeMessages: mockMergeMessages,
+  cleanupTmpFiles: mockCleanupTmpFiles,
+}));
+
 import { run, postEnvelopeToZmail } from '../zmail.js';
 import type { Session } from '../session.js';
 
@@ -20,6 +59,8 @@ vi.spyOn(process, 'exit').mockImplementation((() => {
 
 const mockLog = vi.spyOn(console, 'log').mockImplementation(() => {});
 const mockError = vi.spyOn(console, 'error').mockImplementation(() => {});
+// log.error writes to process.stderr, not console.error
+const mockStderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -127,7 +168,10 @@ describe('zmail register command', () => {
     const { session } = createTestSession(['register']);
 
     await expect(run(session)).rejects.toThrow('process.exit called');
-    expect(mockError).toHaveBeenCalledWith('Registration failed: agent_not_bound');
+    // log.error writes to process.stderr via the log module, not console.error
+    expect(mockStderr).toHaveBeenCalledWith(
+      expect.stringContaining('Registration failed: agent_not_bound'),
+    );
   });
 
   it('handles network errors gracefully', async () => {
@@ -155,11 +199,289 @@ describe('zmail register command', () => {
 });
 
 // ============================================================================
+// Sync Command
+// ============================================================================
+
+describe('zmail sync command', () => {
+  it('performs full sync and writes local cache', async () => {
+    // Single page of inbox and sent
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          messages: [{ id: 'inbox1', created_at: 100 }],
+          cursor: 'cursor-inbox',
+        }),
+      })
+      // Second inbox page: empty (end of pagination)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ messages: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          messages: [{ id: 'sent1', created_at: 200 }],
+          cursor: 'cursor-sent',
+        }),
+      })
+      // Second sent page: empty
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ messages: [] }),
+      });
+
+    const { session } = createTestSession(['sync']);
+
+    await run(session);
+
+    // Verify writeInbox and writeSent were called
+    expect(mockWriteInbox).toHaveBeenCalledTimes(1);
+    expect(mockWriteSent).toHaveBeenCalledTimes(1);
+    expect(mockWriteSyncState).toHaveBeenCalledTimes(1);
+    expect(mockCleanupTmpFiles).toHaveBeenCalledTimes(1);
+
+    // Verify sync state includes cursors
+    const syncStateArg = mockWriteSyncState.mock.calls[0]![1];
+    expect(syncStateArg.version).toBe(1);
+    expect(syncStateArg.last_sync_at).toBeTypeOf('number');
+
+    // Verify output summary
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('new inbox'));
+  });
+
+  it('uses saved cursor for incremental sync', async () => {
+    // Simulate existing sync state with cursors
+    mockReadSyncState.mockReturnValue({
+      version: 1,
+      inbox_cursor: 'prev-inbox-cursor',
+      sent_cursor: 'prev-sent-cursor',
+      last_sync_at: 1700000000,
+    });
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ messages: [], cursor: undefined }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ messages: [], cursor: undefined }),
+      });
+
+    const { session } = createTestSession(['sync']);
+
+    await run(session);
+
+    // Verify that the first fetch included the saved cursor
+    const firstUrl = mockFetch.mock.calls[0]![0] as string;
+    expect(firstUrl).toContain('after=prev-inbox-cursor');
+  });
+
+  it('ignores saved cursor when --full is set', async () => {
+    mockReadSyncState.mockReturnValue({
+      version: 1,
+      inbox_cursor: 'old-cursor',
+      sent_cursor: 'old-cursor',
+      last_sync_at: 1700000000,
+    });
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ messages: [], cursor: undefined }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ messages: [], cursor: undefined }),
+      });
+
+    const { session } = createTestSession(['sync'], { full: true });
+
+    await run(session);
+
+    // First URL should NOT contain the old cursor
+    const firstUrl = mockFetch.mock.calls[0]![0] as string;
+    expect(firstUrl).not.toContain('old-cursor');
+  });
+
+  it('does not overwrite cache on network error', async () => {
+    mockFetch.mockRejectedValue(new Error('Network error'));
+
+    const { session } = createTestSession(['sync']);
+
+    await expect(run(session)).rejects.toThrow('Network error');
+
+    // Write functions should not have been called
+    expect(mockWriteInbox).not.toHaveBeenCalled();
+    expect(mockWriteSent).not.toHaveBeenCalled();
+    expect(mockWriteSyncState).not.toHaveBeenCalled();
+  });
+
+  it('outputs JSON summary when --json is set', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ messages: [], cursor: undefined }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ messages: [], cursor: undefined }),
+      });
+
+    const { session } = createTestSession(['sync'], { json: true });
+
+    await run(session);
+
+    // Should output JSON with summary fields
+    const jsonCall = mockLog.mock.calls.find(
+      c => typeof c[0] === 'string' && c[0].includes('inbox_new'),
+    );
+    expect(jsonCall).toBeTruthy();
+    const parsed = JSON.parse(jsonCall![0] as string);
+    expect(parsed.inbox_new).toBe(0);
+    expect(parsed.sent_new).toBe(0);
+  });
+});
+
+// ============================================================================
 // Inbox Command
 // ============================================================================
 
 describe('zmail inbox command', () => {
-  it('fetches and displays inbox messages', async () => {
+  it('reads from local cache when sync state exists', async () => {
+    mockReadSyncState.mockReturnValue({
+      version: 1,
+      inbox_cursor: 'c',
+      last_sync_at: 1710000000,
+    });
+    mockReadInbox.mockReturnValue({
+      version: 1,
+      synced_at: 1710000000,
+      messages: [
+        { id: 'msg1', ai_id: 'sender-a', created_at: 1710000000, read: false },
+        { id: 'msg2', ai_id: 'sender-b', created_at: 1710001000, read: true },
+      ],
+    });
+
+    const { session } = createTestSession(['inbox']);
+
+    await run(session);
+
+    // Should NOT call fetch (reads from cache)
+    expect(mockFetch).not.toHaveBeenCalled();
+    // Should display messages
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('2 message(s)'));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('cached'));
+  });
+
+  it('falls back to online when no cache exists', async () => {
+    // readSyncState returns null (no cache)
+    mockReadSyncState.mockReturnValue(null);
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [], unread_count: 0 }),
+    });
+    const { session } = createTestSession(['inbox']);
+
+    await run(session);
+
+    // Should call fetch
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
+  it('uses cache for empty inbox after a successful sync', async () => {
+    // sync-state exists and inbox was synced (synced_at > 0) but has no messages —
+    // this is a valid empty inbox, should NOT fall back to online.
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadInbox.mockReturnValue({ version: 1, synced_at: 1710000000, messages: [] });
+    const { session } = createTestSession(['inbox']);
+
+    await run(session);
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('0 message(s)'));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('cached'));
+  });
+
+  it('falls back to online when inbox.json was never written by sync', async () => {
+    // sync-state exists but inbox.json is the default (synced_at = 0, never written)
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadInbox.mockReturnValue({ version: 1, synced_at: 0, messages: [] });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [{ id: 'live1', ai_id: 'x', created_at: 1710000000, read: false }], unread_count: 0 }),
+    });
+    const { session } = createTestSession(['inbox']);
+
+    await run(session);
+
+    // synced_at = 0 means inbox.json was never written — fall back to online
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
+  it('forces online mode with --online flag', async () => {
+    // Even with sync state present, --online should bypass cache
+    mockReadSyncState.mockReturnValue({
+      version: 1,
+      inbox_cursor: 'c',
+      last_sync_at: 1710000000,
+    });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [], unread_count: 0 }),
+    });
+    const { session } = createTestSession(['inbox'], { online: true });
+
+    await run(session);
+
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
+  it('filters unread messages from cache', async () => {
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadInbox.mockReturnValue({
+      version: 1,
+      synced_at: 1710000000,
+      messages: [
+        { id: 'msg1', ai_id: 'a', created_at: 100, read: false },
+        { id: 'msg2', ai_id: 'b', created_at: 200, read: true },
+        { id: 'msg3', ai_id: 'c', created_at: 300, read: false },
+      ],
+    });
+
+    const { session } = createTestSession(['inbox'], { unread: true });
+
+    await run(session);
+
+    // Should show only 2 unread messages
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('2 message(s)'));
+  });
+
+  it('applies --limit to cached results', async () => {
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadInbox.mockReturnValue({
+      version: 1,
+      synced_at: 1710000000,
+      messages: [
+        { id: 'msg1', ai_id: 'a', created_at: 100, read: false },
+        { id: 'msg2', ai_id: 'b', created_at: 200, read: false },
+        { id: 'msg3', ai_id: 'c', created_at: 300, read: false },
+      ],
+    });
+
+    const { session } = createTestSession(['inbox'], { limit: '1' });
+
+    await run(session);
+
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('1 message(s)'));
+    // Should show "and N more" hint
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('2 more'));
+  });
+
+  // Online mode tests (existing behavior preserved)
+  it('fetches and displays inbox messages (online)', async () => {
+    mockReadSyncState.mockReturnValue(null);
     const sampleMessages = [
       { id: 'msg1', ai_id: 'sender-principal', created_at: 1710000000, read: false },
       { id: 'msg2', ai_id: 'other-sender', created_at: 1710001000, read: true },
@@ -191,7 +513,8 @@ describe('zmail inbox command', () => {
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('next-cursor'));
   });
 
-  it('handles empty inbox', async () => {
+  it('handles empty inbox (online)', async () => {
+    mockReadSyncState.mockReturnValue(null);
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ messages: [], unread_count: 0 }),
@@ -203,7 +526,8 @@ describe('zmail inbox command', () => {
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('0 message(s)'));
   });
 
-  it('outputs raw JSON when --json flag is set', async () => {
+  it('outputs raw JSON when --json flag is set (online)', async () => {
+    mockReadSyncState.mockReturnValue(null);
     const responseData = { messages: [{ id: 'msg1' }], cursor: null, unread_count: 0 };
     mockFetch.mockResolvedValue({
       ok: true,
@@ -216,7 +540,8 @@ describe('zmail inbox command', () => {
     expect(mockLog).toHaveBeenCalledWith(JSON.stringify(responseData, null, 2));
   });
 
-  it('passes query params correctly', async () => {
+  it('passes query params correctly (online)', async () => {
+    mockReadSyncState.mockReturnValue(null);
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ messages: [] }),
@@ -226,6 +551,7 @@ describe('zmail inbox command', () => {
       after: 'cursor123',
       unread: true,
       from: 'sender-abc',
+      online: true,
     });
 
     await run(session);
@@ -237,7 +563,8 @@ describe('zmail inbox command', () => {
     expect(url).toContain('from=sender-abc');
   });
 
-  it('throws error on HTTP failure', async () => {
+  it('throws error on HTTP failure (online)', async () => {
+    mockReadSyncState.mockReturnValue(null);
     mockFetch.mockResolvedValue({
       ok: false,
       status: 401,
@@ -254,7 +581,38 @@ describe('zmail inbox command', () => {
 // ============================================================================
 
 describe('zmail sent command', () => {
-  it('fetches and displays sent messages', async () => {
+  it('reads from local cache when sync state exists', async () => {
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadSent.mockReturnValue({
+      version: 1,
+      synced_at: 1710000000,
+      messages: [{ id: 'sent1', created_at: 1710000000, recipients: ['bob'] }],
+    });
+
+    const { session } = createTestSession(['sent']);
+
+    await run(session);
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('1 message(s)'));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('cached'));
+  });
+
+  it('falls back to online when no cache exists', async () => {
+    mockReadSyncState.mockReturnValue(null);
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [] }),
+    });
+    const { session } = createTestSession(['sent']);
+
+    await run(session);
+
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
+  it('fetches and displays sent messages (online)', async () => {
+    mockReadSyncState.mockReturnValue(null);
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({
@@ -269,12 +627,13 @@ describe('zmail sent command', () => {
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('bob'));
   });
 
-  it('passes --to query param', async () => {
+  it('passes --to query param (online)', async () => {
+    mockReadSyncState.mockReturnValue(null);
     mockFetch.mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ messages: [] }),
     });
-    const { session } = createTestSession(['sent'], { to: 'bob-principal' });
+    const { session } = createTestSession(['sent'], { to: 'bob-principal', online: true });
 
     await run(session);
 
@@ -310,6 +669,70 @@ describe('zmail ack command', () => {
 
     await expect(run(session)).rejects.toThrow('process.exit called');
     expect(mockError).toHaveBeenCalledWith('Error: --msg-id=<id,...> is required');
+  });
+
+  it('updates local cache to mark acked messages as read', async () => {
+    // Set up: sync state exists and inbox has unread messages
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadInbox.mockReturnValue({
+      version: 1,
+      synced_at: 1710000000,
+      messages: [
+        { id: 'msg1', ai_id: 'a', created_at: 100, read: false },
+        { id: 'msg2', ai_id: 'b', created_at: 200, read: false },
+        { id: 'msg3', ai_id: 'c', created_at: 300, read: true },
+      ],
+    });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ acked_count: 1 }),
+    });
+
+    const { session } = createTestSession(['ack'], { 'msg-id': 'msg1' });
+    await run(session);
+
+    // writeInbox should have been called with msg1 marked as read
+    expect(mockWriteInbox).toHaveBeenCalledTimes(1);
+    const writtenData = mockWriteInbox.mock.calls[0]![1];
+    const msg1 = writtenData.messages.find((m: Record<string, unknown>) => m.id === 'msg1');
+    expect(msg1.read).toBe(true);
+    // msg2 should still be unread
+    const msg2 = writtenData.messages.find((m: Record<string, unknown>) => m.id === 'msg2');
+    expect(msg2.read).toBe(false);
+  });
+
+  it('skips cache update when no sync state exists', async () => {
+    mockReadSyncState.mockReturnValue(null);
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ acked_count: 1 }),
+    });
+
+    const { session } = createTestSession(['ack'], { 'msg-id': 'msg1' });
+    await run(session);
+
+    // No cache to update
+    expect(mockWriteInbox).not.toHaveBeenCalled();
+  });
+
+  it('still succeeds when local cache write fails (best-effort)', async () => {
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadInbox.mockReturnValue({
+      version: 1,
+      synced_at: 1710000000,
+      messages: [{ id: 'msg1', ai_id: 'a', created_at: 100, read: false }],
+    });
+    // Simulate cache write failure (e.g. disk full, permission error)
+    mockWriteInbox.mockImplementation(() => { throw new Error('ENOSPC: disk full'); });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ acked_count: 1 }),
+    });
+
+    const { session } = createTestSession(['ack'], { 'msg-id': 'msg1' });
+    // Should NOT throw — ack already succeeded on server
+    await run(session);
+    expect(mockLog).toHaveBeenCalledWith('Acknowledged 1 message(s).');
   });
 });
 

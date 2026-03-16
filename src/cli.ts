@@ -76,7 +76,7 @@ function showHelp(): void {
   console.log('  pow         PoW computation (<base_string> <zeros>)');
   console.log('  vetkey      VetKey encryption/decryption (encrypt-sign, decrypt, ...)');
   console.log('  social      Social profile query (get-profile)');
-  console.log('  zmail       Encrypted mail (register, inbox, sent, ack)');
+  console.log('  zmail       Encrypted mail (register, sync, inbox, sent, ack)');
   console.log('  pre-check   Manually run the package/skill update pre-check');
   console.log('');
   console.log('Global options:');

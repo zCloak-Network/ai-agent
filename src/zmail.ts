@@ -3,13 +3,17 @@
  *
  * Provides commands to interact with the zMail encrypted mail server:
  *   register    Register this agent with zMail (required before sending)
- *   send        Send an encrypted message (builds Kind17 envelope + POSTs to zMail)
- *   inbox       Fetch inbox messages from zMail
- *   sent        Fetch sent messages from zMail
+ *   sync        Sync messages from server to local cache
+ *   inbox       Read inbox messages (local cache first, --online for live)
+ *   sent        Read sent messages (local cache first, --online for live)
  *   ack         Acknowledge (mark as read) inbox messages
  *
  * All messages are end-to-end encrypted using IBE (Identity-Based Encryption).
  * The zMail server never sees plaintext — it only routes and stores ciphertext.
+ *
+ * Local cache follows the zmail-skill pattern:
+ *   sync pulls messages from server → stores in ~/.config/zcloak/mailboxes/
+ *   inbox/sent read from local cache (offline capable after sync)
  *
  * Usage: zcloak-ai zmail <sub-command> [options]
  */
@@ -22,6 +26,17 @@ import config from './config.js';
 import * as log from './log.js';
 import { extractPrivateKeyHex, schnorrPubkeyFromSpki } from './vetkey.js';
 import type { Kind17Envelope } from './vetkey.js';
+import {
+  readInbox,
+  readSent,
+  writeInbox,
+  writeSent,
+  readSyncState,
+  writeSyncState,
+  mergeMessages,
+  cleanupTmpFiles,
+} from './mailbox-store.js';
+import type { CachedMessage, MailboxFile } from './mailbox-store.js';
 
 // ============================================================================
 // Module Entry Point
@@ -39,6 +54,9 @@ export async function run(session: Session): Promise<void> {
   switch (command) {
     case 'register':
       await cmdRegister(session);
+      break;
+    case 'sync':
+      await cmdSync(session);
       break;
     case 'inbox':
       await cmdInbox(session);
@@ -66,23 +84,29 @@ function showHelp(): void {
   console.log('');
   console.log('Commands:');
   console.log('  register              Register this agent with zMail server');
-  console.log('  inbox                 Fetch inbox messages');
-  console.log('  sent                  Fetch sent messages');
+  console.log('  sync                  Sync messages from server to local cache');
+  console.log('  inbox                 Read inbox messages (cached; use --online for live)');
+  console.log('  sent                  Read sent messages (cached; use --online for live)');
   console.log('  ack                   Acknowledge (mark as read) messages');
   console.log('');
   console.log('Options:');
   console.log('  --zmail-url=<url>     Override zMail server URL');
-  console.log('  --limit=<n>           Max messages to fetch (default: 20)');
-  console.log('  --after=<cursor>      Pagination cursor (from previous response)');
-  console.log('  --unread              Only fetch unread messages (inbox only)');
+  console.log('  --limit=<n>           Max messages to display (default: 20)');
+  console.log('  --after=<cursor>      Pagination cursor (online mode only)');
+  console.log('  --unread              Only show unread messages (inbox only)');
   console.log('  --from=<principal>    Filter by sender (inbox only)');
   console.log('  --to=<principal>      Filter by recipient (sent only)');
   console.log('  --msg-id=<id,...>     Message IDs to acknowledge (ack only)');
   console.log('  --json                Output raw JSON response');
+  console.log('  --online              Force live API fetch (skip local cache)');
+  console.log('  --full                Full sync (ignore saved cursor, re-fetch all)');
   console.log('');
   console.log('Examples:');
   console.log('  zcloak-ai zmail register');
+  console.log('  zcloak-ai zmail sync');
+  console.log('  zcloak-ai zmail sync --full');
   console.log('  zcloak-ai zmail inbox --limit=10 --unread');
+  console.log('  zcloak-ai zmail inbox --online');
   console.log('  zcloak-ai zmail sent --limit=5');
   console.log('  zcloak-ai zmail ack --msg-id=abc123,def456');
 }
@@ -333,20 +357,252 @@ async function cmdRegister(session: Session): Promise<void> {
 }
 
 // ============================================================================
+// Command: sync
+// ============================================================================
+
+/** Maximum messages per API page during sync */
+const SYNC_PAGE_LIMIT = 100;
+
+/**
+ * Fetch all pages of messages from a zMail endpoint.
+ * Returns the accumulated messages and the final pagination cursor.
+ *
+ * @param session   - CLI session for auth headers
+ * @param zmailUrl  - zMail server base URL
+ * @param endpoint  - API path (e.g. "/v1/inbox/{principal}")
+ * @param cursor    - Starting pagination cursor (undefined for first page)
+ * @returns Object with all fetched messages and the last cursor
+ */
+async function fetchAllPages(
+  session: Session,
+  zmailUrl: string,
+  endpoint: string,
+  cursor?: string,
+): Promise<{ messages: CachedMessage[]; cursor?: string }> {
+  const allMessages: CachedMessage[] = [];
+  let currentCursor = cursor;
+  // Track the last non-undefined cursor so we don't lose it when the
+  // final page returns no cursor (which would reset incremental sync).
+  let lastValidCursor = cursor;
+
+  // Paginate until no more cursor is returned by the server
+  while (true) {
+    const query: Record<string, string> = { limit: String(SYNC_PAGE_LIMIT) };
+    if (currentCursor) query['after'] = currentCursor;
+
+    const queryString = Object.entries(query)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+    const url = `${zmailUrl}${endpoint}?${queryString}`;
+    const headers = buildOwnershipProofHeaders(session, 'GET', endpoint, query);
+
+    let res: Response;
+    try {
+      res = await fetch(url, { method: 'GET', headers });
+    } catch (err) {
+      throw new Error(`Failed to connect to zMail: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const body = await res.json() as Record<string, unknown>;
+
+    if (!res.ok) {
+      const errorCode = (body.error as string) || `HTTP ${res.status}`;
+      throw new Error(`Sync fetch failed (${endpoint}): ${errorCode}`);
+    }
+
+    const pageMessages = (body.messages ?? []) as CachedMessage[];
+    allMessages.push(...pageMessages);
+
+    currentCursor = body.cursor as string | undefined;
+    if (currentCursor) lastValidCursor = currentCursor;
+    // No more pages or empty page — done
+    if (!currentCursor || pageMessages.length === 0) break;
+  }
+
+  return { messages: allMessages, cursor: lastValidCursor };
+}
+
+/**
+ * Sync messages from the zMail server to local cache.
+ *
+ * Uses incremental pagination cursors: on first sync, fetches everything;
+ * on subsequent syncs, resumes from the last saved cursor.
+ *
+ * Options:
+ *   --full    Ignore saved cursor, perform full re-sync
+ *   --json    Output sync summary as JSON
+ */
+async function cmdSync(session: Session): Promise<void> {
+  const zmailUrl = resolveZmailUrl(session);
+  const principal = session.getPrincipal();
+  const fullSync = session.args['full'] === true;
+  const jsonOutput = session.args['json'] === true;
+
+  // Load existing state (cursors from last sync).
+  // In full mode, skip previous state and cache — the result replaces everything.
+  const prevState = fullSync ? null : readSyncState(principal);
+  const prevInbox = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readInbox(principal);
+  const prevSent = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readSent(principal);
+
+  log.info(`Syncing zMail for ${principal}...`);
+  if (prevState && !fullSync) {
+    log.info(`  Incremental sync from cursor (last synced: ${new Date(prevState.last_sync_at * 1000).toISOString()})`);
+  } else {
+    log.info('  Full sync (no previous state or --full flag)');
+  }
+
+  // Fetch inbox pages
+  const inboxResult = await fetchAllPages(
+    session, zmailUrl,
+    `/v1/inbox/${principal}`,
+    prevState?.inbox_cursor,
+  );
+
+  // Fetch sent pages
+  const sentResult = await fetchAllPages(
+    session, zmailUrl,
+    `/v1/sent/${principal}`,
+    prevState?.sent_cursor,
+  );
+
+  // Merge newly fetched messages with existing cache
+  const mergedInbox = mergeMessages(prevInbox.messages, inboxResult.messages);
+  const mergedSent = mergeMessages(prevSent.messages, sentResult.messages);
+  const now = Math.floor(Date.now() / 1000);
+
+  // Write updated cache files atomically
+  writeInbox(principal, { version: 1, synced_at: now, messages: mergedInbox });
+  writeSent(principal, { version: 1, synced_at: now, messages: mergedSent });
+  writeSyncState(principal, {
+    version: 1,
+    inbox_cursor: inboxResult.cursor,
+    sent_cursor: sentResult.cursor,
+    last_sync_at: now,
+  });
+
+  // Clean up any leftover .tmp files from interrupted writes
+  cleanupTmpFiles(principal);
+
+  // Output sync summary
+  const summary = {
+    inbox_new: inboxResult.messages.length,
+    sent_new: sentResult.messages.length,
+    inbox_total: mergedInbox.length,
+    sent_total: mergedSent.length,
+    synced_at: now,
+  };
+
+  if (jsonOutput) {
+    console.log(JSON.stringify(summary, null, 2));
+  } else {
+    console.log(`Synced: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent`);
+    console.log(`  Total cached: ${summary.inbox_total} inbox, ${summary.sent_total} sent`);
+  }
+}
+
+// ============================================================================
 // Command: inbox
 // ============================================================================
 
 /**
- * Fetch inbox messages from zMail.
+ * Read inbox messages.
+ *
+ * Default behavior: read from local cache (populated by `sync`).
+ * Use --online to force a live API fetch (original behavior).
+ * If no local cache exists and --online is not set, falls back to online.
  *
  * Options:
  *   --limit=<n>           Max messages (default: 20)
- *   --after=<cursor>      Pagination cursor
+ *   --after=<cursor>      Pagination cursor (online mode only)
  *   --unread              Only unread messages
  *   --from=<principal>    Filter by sender
  *   --json                Output raw JSON
+ *   --online              Force live API fetch
  */
 async function cmdInbox(session: Session): Promise<void> {
+  const online = session.args['online'] === true;
+  const principal = session.getPrincipal();
+
+  // Try local cache first (unless --online is explicitly set)
+  if (!online) {
+    const syncState = readSyncState(principal);
+    const cached = syncState ? readInbox(principal) : null;
+    // Use cache if sync state exists AND the mailbox file was written by a previous sync
+    // (synced_at > 0). An empty message list is valid — it means the inbox is genuinely
+    // empty after sync, and should be displayed as such (offline-capable).
+    if (syncState && cached && cached.synced_at > 0) {
+      outputCachedInbox(session, cached, syncState.last_sync_at);
+      return;
+    }
+    // No usable cache — fall through to online mode
+    log.info('No local cache found. Fetching from server (run "zmail sync" to cache locally).');
+  }
+
+  // Online mode: original API fetch logic
+  await cmdInboxOnline(session);
+}
+
+/**
+ * Output inbox messages from local cache with in-memory filtering.
+ */
+function outputCachedInbox(
+  session: Session,
+  cached: MailboxFile,
+  lastSyncAt: number,
+): void {
+  const limit = parseInt((session.args['limit'] as string) || '20', 10);
+  const unreadOnly = session.args['unread'] === true;
+  const fromFilter = session.args['from'] as string | undefined;
+  const jsonOutput = session.args['json'] === true;
+
+  // Apply filters in memory
+  let messages = cached.messages;
+  if (unreadOnly) {
+    messages = messages.filter(m => !(m.read as boolean));
+  }
+  if (fromFilter) {
+    messages = messages.filter(m => (m.ai_id as string) === fromFilter);
+  }
+
+  // Count unread within the (possibly filtered) result set, not the full cache
+  const unreadCount = messages.filter(m => !(m.read as boolean)).length;
+
+  // Apply limit
+  const limited = messages.slice(0, limit);
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      messages: limited,
+      unread_count: unreadCount,
+      cached: true,
+      synced_at: lastSyncAt,
+    }, null, 2));
+    return;
+  }
+
+  const syncTime = new Date(lastSyncAt * 1000).toISOString();
+  console.log(`Inbox: ${limited.length} message(s)${unreadCount > 0 ? `, ${unreadCount} unread` : ''} (cached, last synced: ${syncTime})`);
+  console.log('');
+
+  for (const msg of limited) {
+    const read = (msg.read as boolean) ? '' : ' [NEW]';
+    const time = new Date(((msg.created_at ?? msg.received_at) as number) * 1000).toISOString();
+    const from = msg.ai_id as string;
+    const msgId = msg.id as string;
+    console.log(`  ${read ? '●' : '○'}${read} ${time}`);
+    console.log(`    From: ${from}`);
+    console.log(`    ID:   ${msgId}`);
+    console.log('');
+  }
+
+  if (messages.length > limit) {
+    console.log(`  ... and ${messages.length - limit} more (increase --limit to see more)`);
+  }
+}
+
+/**
+ * Original online inbox fetch — used when --online is set or no cache exists.
+ */
+async function cmdInboxOnline(session: Session): Promise<void> {
   const zmailUrl = resolveZmailUrl(session);
   const principal = session.getPrincipal();
   const limit = (session.args['limit'] as string) || '20';
@@ -420,15 +676,94 @@ async function cmdInbox(session: Session): Promise<void> {
 // ============================================================================
 
 /**
- * Fetch sent messages from zMail.
+ * Read sent messages.
+ *
+ * Default behavior: read from local cache (populated by `sync`).
+ * Use --online to force a live API fetch.
+ * If no local cache exists and --online is not set, falls back to online.
  *
  * Options:
  *   --limit=<n>           Max messages (default: 20)
- *   --after=<cursor>      Pagination cursor
+ *   --after=<cursor>      Pagination cursor (online mode only)
  *   --to=<principal>      Filter by recipient
  *   --json                Output raw JSON
+ *   --online              Force live API fetch
  */
 async function cmdSent(session: Session): Promise<void> {
+  const online = session.args['online'] === true;
+  const principal = session.getPrincipal();
+
+  // Try local cache first (unless --online is explicitly set)
+  if (!online) {
+    const syncState = readSyncState(principal);
+    const cached = syncState ? readSent(principal) : null;
+    if (syncState && cached && cached.synced_at > 0) {
+      outputCachedSent(session, cached, syncState.last_sync_at);
+      return;
+    }
+    log.info('No local cache found. Fetching from server (run "zmail sync" to cache locally).');
+  }
+
+  // Online mode: original API fetch logic
+  await cmdSentOnline(session);
+}
+
+/**
+ * Output sent messages from local cache with in-memory filtering.
+ */
+function outputCachedSent(
+  session: Session,
+  cached: MailboxFile,
+  lastSyncAt: number,
+): void {
+  const limit = parseInt((session.args['limit'] as string) || '20', 10);
+  const toFilter = session.args['to'] as string | undefined;
+  const jsonOutput = session.args['json'] === true;
+
+  // Apply filters in memory
+  let messages = cached.messages;
+  if (toFilter) {
+    messages = messages.filter(m => {
+      const recipients = (m.recipients ?? []) as string[];
+      return recipients.includes(toFilter);
+    });
+  }
+
+  // Apply limit
+  const limited = messages.slice(0, limit);
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({
+      messages: limited,
+      cached: true,
+      synced_at: lastSyncAt,
+    }, null, 2));
+    return;
+  }
+
+  const syncTime = new Date(lastSyncAt * 1000).toISOString();
+  console.log(`Sent: ${limited.length} message(s) (cached, last synced: ${syncTime})`);
+  console.log('');
+
+  for (const msg of limited) {
+    const time = new Date(((msg.created_at ?? msg.stored_at) as number) * 1000).toISOString();
+    const recipients = (msg.recipients ?? []) as string[];
+    const msgId = msg.id as string;
+    console.log(`  ${time}`);
+    console.log(`    To:   ${recipients.join(', ')}`);
+    console.log(`    ID:   ${msgId}`);
+    console.log('');
+  }
+
+  if (messages.length > limit) {
+    console.log(`  ... and ${messages.length - limit} more (increase --limit to see more)`);
+  }
+}
+
+/**
+ * Original online sent fetch — used when --online is set or no cache exists.
+ */
+async function cmdSentOnline(session: Session): Promise<void> {
   const zmailUrl = resolveZmailUrl(session);
   const principal = session.getPrincipal();
   const limit = (session.args['limit'] as string) || '20';
@@ -543,5 +878,31 @@ async function cmdAck(session: Session): Promise<void> {
     throw new Error(`Ack failed: ${errorCode}`);
   }
 
-  console.log(`Acknowledged ${resBody.acked_count ?? msgIds.length} message(s).`);
+  const ackedCount = resBody.acked_count ?? msgIds.length;
+  console.log(`Acknowledged ${ackedCount} message(s).`);
+
+  // Best-effort update of local cache: mark acked messages as read so that
+  // `inbox --unread` reflects the change without needing a full re-sync.
+  // This must never cause the command to report failure — the server ACK
+  // already succeeded, so cache issues are non-critical.
+  try {
+    const syncState = readSyncState(principal);
+    if (syncState) {
+      const cached = readInbox(principal);
+      const ackSet = new Set(msgIds);
+      let changed = false;
+      for (const msg of cached.messages) {
+        if (ackSet.has(msg.id as string) && !(msg.read as boolean)) {
+          msg.read = true;
+          changed = true;
+        }
+      }
+      if (changed) {
+        writeInbox(principal, { ...cached, synced_at: cached.synced_at });
+      }
+    }
+  } catch {
+    // Cache update is best-effort — log but don't fail the command.
+    log.warn('Failed to update local inbox cache after ack (run "zmail sync" to refresh).');
+  }
 }
