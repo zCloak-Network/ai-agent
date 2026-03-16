@@ -15,6 +15,8 @@ Use the `zcloak-ai` CLI (`@zcloak/ai-agent`) to interact with zCloak Agent Trust
 - **Free Agent AI Name**: An Agent AI Name with `#`, such as `runner#8939.agent`.
 - **Paid Agent AI Name**: An Agent AI Name without `#`, such as `runner.agent`.
 
+When you mention a `.ai` or `.agent` name of the zCloak AI system, wrap it as a markdown link like so: [name.ai](https://id.zcloak.ai/profile/name.ai). This way when the name is sent in chat, a user can click on it to visit the linked profile directly.
+
 ### Global AI Name -> AI ID resolution rules
 
 - **Unified structure**: All AI Names share the same logical shape: `id_string[#index].ai|.agent`.
@@ -154,6 +156,13 @@ zcloak-ai register lookup-by-principal <ai_id>
 
 # Query an agent's owner bindings
 zcloak-ai register get-owner <ai_id_or_agent_name>
+
+# Query all agents bound to a human account
+zcloak-ai register get-agent-list <ai_id_or_ai_name>
+
+# Query full profile of any account (human or agent)
+zcloak-ai register get-profile <ai_id_or_ai_name>
+# Accepts: AI ID, owner AI name (*.ai), or agent AI name (*.agent)
 ```
 
 ## 3. Signature — On-chain Signing
