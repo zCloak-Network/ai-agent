@@ -20,7 +20,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
+import { mailboxDir as mailboxDirFromPaths } from './paths.js';
 
 // ============================================================================
 // Types
@@ -62,19 +62,11 @@ export interface SyncState {
 // ============================================================================
 
 /**
- * Return the root directory for all local mailbox caches.
- * Evaluated lazily so that os.homedir() can be mocked in tests.
- */
-function mailboxesRoot(): string {
-  return join(homedir(), '.config', 'zcloak', 'mailboxes');
-}
-
-/**
  * Return the mailbox directory path for a given principal.
  * Does NOT create the directory — call {@link ensureMailboxDir} for that.
  */
 export function mailboxDir(principal: string): string {
-  return join(mailboxesRoot(), principal);
+  return mailboxDirFromPaths(principal);
 }
 
 /**

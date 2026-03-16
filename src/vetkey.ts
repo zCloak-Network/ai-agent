@@ -28,7 +28,7 @@ import { readFileSync, statSync, writeFileSync, existsSync, mkdirSync, openSync,
 import { basename, dirname } from 'path';
 import { createConnection } from 'net';
 import { spawn } from 'child_process';
-import { homedir } from 'os';
+import { daemonLogPath } from './paths.js';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
@@ -609,15 +609,15 @@ const STANDARD_DAEMON_KEY_NAMES = ['default', 'Mail'] as const;
  * Spawn a daemon process in the background for the given key name.
  *
  * The child process is fully detached (survives parent exit) with stderr
- * redirected to a log file under ~/.vetkey-tool/.
+ * redirected to a log file under ~/.config/zcloak/run/.
  *
  * @param pemPath - Path to the identity PEM file
  * @param keyName - Daemon key name (e.g. "default", "Mail")
  * @returns The child process PID (or undefined if spawn failed)
  */
 function spawnDaemonBackground(pemPath: string, keyName: string): number | undefined {
-  const logDir = join(homedir(), '.vetkey-tool');
-  const logPath = join(logDir, `${keyName.toLowerCase()}-daemon.log`);
+  const logPath = daemonLogPath(keyName);
+  const logDir = dirname(logPath);
 
   try {
     mkdirSync(logDir, { recursive: true });
@@ -687,7 +687,7 @@ async function ensureDaemon(session: Session, keyName: string): Promise<string> 
 
   // Poll for the socket file to appear (daemon writes PID + creates socket on ready)
   const sock = socketPath(derivationId);
-  const logPath = join(homedir(), '.vetkey-tool', `${keyName.toLowerCase()}-daemon.log`);
+  const logPath = daemonLogPath(keyName);
   const deadline = Date.now() + DAEMON_READY_TIMEOUT_MS;
 
   while (Date.now() < deadline) {

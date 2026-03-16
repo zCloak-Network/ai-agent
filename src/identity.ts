@@ -17,6 +17,7 @@ import path from 'path';
 import os from 'os';
 import { generateKeyPairSync } from 'crypto';
 import { Secp256k1KeyIdentity } from '@dfinity/identity-secp256k1';
+import { defaultPemPath } from './paths.js';
 
 
 // ========== PEM File Lookup ==========
@@ -25,10 +26,7 @@ import { Secp256k1KeyIdentity } from '@dfinity/identity-secp256k1';
  * zCloak default identity PEM file path
  * Unified for macOS and Linux: ~/.config/zcloak/ai-id.pem
  */
-export const DEFAULT_PEM_PATH: string = path.join(
-  os.homedir(),
-  '.config', 'zcloak', 'ai-id.pem'
-);
+export const DEFAULT_PEM_PATH: string = defaultPemPath();
 
 /**
  * Expand CLI paths like ~/foo.pem to an absolute path.

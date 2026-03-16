@@ -1,9 +1,5 @@
 import fs from 'fs';
-import os from 'os';
-import path from 'path';
-
-const LOG_DIR = path.join(os.homedir(), '.config', 'zcloak');
-const DEBUG_LOG_FILE = path.join(LOG_DIR, 'debug.log');
+import { configDir, debugLogPath } from './paths.js';
 
 function isDebugEnabled(): boolean {
   const value = process.env.ZCLOAK_DEBUG?.trim().toLowerCase();
@@ -33,8 +29,8 @@ function write(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR', parts: unknown[]): vo
   process.stderr.write(entry);
 
   try {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
-    fs.appendFileSync(DEBUG_LOG_FILE, entry, 'utf-8');
+    fs.mkdirSync(configDir(), { recursive: true });
+    fs.appendFileSync(debugLogPath(), entry, 'utf-8');
   } catch {
     // Logging must never break the main command path.
   }

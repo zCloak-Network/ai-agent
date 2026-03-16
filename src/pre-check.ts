@@ -23,10 +23,10 @@
 import fs from "fs";
 import https from "https";
 import path from "path";
-import os from "os";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 import { debug } from "./log.js";
+import { configDir as getConfigDir, lastUpdateCheckPath } from "./paths.js";
 
 // ---------------------------------------------------------------------------
 // Path constants
@@ -42,10 +42,10 @@ const PACKAGE_ROOT = path.resolve(__dirname, "..");
 const LOCAL_PACKAGE_JSON = path.join(PACKAGE_ROOT, "package.json");
 
 /** Directory for zCloak configuration files */
-const CONFIG_DIR = path.join(os.homedir(), ".config", "zcloak");
+const CONFIG_DIR = getConfigDir();
 
 /** Timestamp file recording when we last checked for updates */
-const CHECK_FILE = path.join(CONFIG_DIR, ".last-update-check");
+const CHECK_FILE = lastUpdateCheckPath();
 
 /** Workspace SKILL.md path expected by openClaw. */
 const WORKSPACE_SKILL_PATH = path.resolve(

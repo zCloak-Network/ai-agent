@@ -2,9 +2,9 @@
  * Daemon Lifecycle Management — PID file, socket path, runtime directory
  *
  * Manages the daemon's file system footprint:
- *   - Runtime directory: ~/.vetkey-tool/ (created with 0o700 permissions)
- *   - PID file:   ~/.vetkey-tool/{sanitized_id}.pid
- *   - Socket file: ~/.vetkey-tool/{sanitized_id}.sock
+ *   - Runtime directory: ~/.config/zcloak/run/ (created with 0o700 permissions)
+ *   - PID file:   ~/.config/zcloak/run/{sanitized_id}.pid
+ *   - Socket file: ~/.config/zcloak/run/{sanitized_id}.sock
  *
  * Prevents duplicate daemon instances by checking PID files and verifying
  * whether the process is still alive. Stale PID/socket files from crashed
@@ -17,13 +17,14 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
 import crypto from 'crypto';
 import { daemonError } from './error.js';
 import * as log from './log.js';
+import { runtimeDir as _runtimeDir } from './paths.js';
 
-/** Runtime directory name under home directory */
-const RUNTIME_DIR_NAME = ".vetkey-tool";
+// Re-export runtimeDir from paths.ts so existing consumers (tests, vetkey.ts)
+// can continue importing from daemon.ts without changes.
+export { runtimeDir } from './paths.js';
 
 /**
  * Maximum socket path length.
@@ -35,11 +36,6 @@ const MAX_SOCKET_PATH_LEN = 100;
 // ============================================================================
 // Path Utilities
 // ============================================================================
-
-/** Get the runtime directory path (~/.vetkey-tool/) */
-export function runtimeDir(): string {
-  return join(homedir(), RUNTIME_DIR_NAME);
-}
 
 /**
  * Sanitize a derivation ID for use in file names.
@@ -59,7 +55,7 @@ export function sanitizeDerivationId(derivationId: string): string {
     .replace(/\\/g, "_");
 
   // Check if the full socket path would be too long
-  const dir = runtimeDir();
+  const dir = _runtimeDir();
   const fullPath = join(dir, `${sanitized}.sock`);
   if (fullPath.length > MAX_SOCKET_PATH_LEN) {
     // Use SHA-256 hash prefix for long derivation IDs
@@ -73,13 +69,13 @@ export function sanitizeDerivationId(derivationId: string): string {
 /** Get the socket file path for a derivation ID */
 export function socketPath(derivationId: string): string {
   const name = sanitizeDerivationId(derivationId);
-  return join(runtimeDir(), `${name}.sock`);
+  return join(_runtimeDir(), `${name}.sock`);
 }
 
 /** Get the PID file path for a derivation ID */
 export function pidPath(derivationId: string): string {
   const name = sanitizeDerivationId(derivationId);
-  return join(runtimeDir(), `${name}.pid`);
+  return join(_runtimeDir(), `${name}.pid`);
 }
 
 // ============================================================================
@@ -204,7 +200,7 @@ export class DaemonRuntime {
    * @throws ToolError with code DAEMON if another instance is already running
    */
   static create(derivationId: string): DaemonRuntime {
-    const dir = runtimeDir();
+    const dir = _runtimeDir();
     const sock = socketPath(derivationId);
     const pid = pidPath(derivationId);
 
