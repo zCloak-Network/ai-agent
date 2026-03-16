@@ -37,7 +37,8 @@ import { fileURLToPath } from 'url';
 import { Session } from './session.js';
 import { preCheck } from './pre-check.js';
 import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity.js';
-import { ensureDaemonsBackground } from './vetkey.js';
+import { STANDARD_DAEMON_KEY_NAMES, spawnDaemonBackground } from './vetkey.js';
+import { isDaemonAlive } from './daemon.js';
 import * as log from './log.js';
 import { migrateLegacyRuntimeDir } from './compat.js';
 
@@ -159,26 +160,45 @@ async function main(): Promise<void> {
   // Create a Session from the constructed argv
   const session = new Session(subArgv);
 
-  // Background daemon warm-up: silently ensure standard daemons (default, Mail)
-  // are always running. Skip only for `vetkey serve` (avoid self-race) and
-  // `identity generate` (PEM file may not exist yet).
-  const isVetkeyServe = moduleName === 'vetkey' && process.argv[3] === 'serve';
-  const isIdentityGenerate = moduleName === 'identity' && process.argv[3] === 'generate';
-  if (!isVetkeyServe && !isIdentityGenerate) {
+  // ── Daemon warm-up (best-effort, never blocks main command) ──────
+  // Each step is independent: fail at any step → skip the rest silently.
+  (() => {
+    // Step 1: Skip commands that conflict with daemon warm-up
+    const skipWarmUp =
+      (moduleName === 'vetkey' && process.argv[3] === 'serve') ||
+      (moduleName === 'identity' && process.argv[3] === 'generate');
+    if (skipWarmUp) return;
+
+    // Step 2: Resolve PEM path
+    const identityArg = process.argv.find(a => a.startsWith('--identity='));
+    const pemPath = identityArg
+      ? identityArg.split('=').slice(1).join('=')
+      : DEFAULT_PEM_PATH;
+
+    // Step 3: PEM file must exist (no identity → no daemon)
+    if (!fs.existsSync(pemPath)) return;
+
+    // Step 4: Load identity and extract principal
+    let principal: string;
     try {
-      const identityArg = process.argv.find(a => a.startsWith('--identity='));
-      const pemPath = identityArg
-        ? identityArg.split('=').slice(1).join('=')
-        : DEFAULT_PEM_PATH;
-      if (fs.existsSync(pemPath)) {
-        const identity = loadIdentityFromPath(pemPath);
-        const principal = identity.getPrincipal().toText();
-        ensureDaemonsBackground(pemPath, principal);
-      }
+      const identity = loadIdentityFromPath(pemPath);
+      principal = identity.getPrincipal().toText();
     } catch {
-      // Silently ignore — daemon warm-up is best-effort
+      return; // Identity load failed — skip warm-up
     }
-  }
+
+    // Step 5: Check each standard daemon, start if not running
+    for (const keyName of STANDARD_DAEMON_KEY_NAMES) {
+      const derivationId = `${principal}:${keyName}`;
+      if (isDaemonAlive(derivationId)) continue;
+
+      try {
+        spawnDaemonBackground(pemPath, keyName);
+      } catch {
+        // Best-effort — ignore spawn failures
+      }
+    }
+  })();
 
   // Load and execute sub-script's run() function.
   // After compilation, __dirname points to dist/, sub-scripts are in the same directory.

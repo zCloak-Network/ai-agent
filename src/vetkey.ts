@@ -603,7 +603,7 @@ const DAEMON_READY_TIMEOUT_MS = 30_000;
 const DAEMON_POLL_INTERVAL_MS = 500;
 
 /** Key names for the two standard daemons that should always be kept alive */
-const STANDARD_DAEMON_KEY_NAMES = ['default', 'Mail'] as const;
+export const STANDARD_DAEMON_KEY_NAMES = ['default', 'Mail'] as const;
 
 /**
  * Spawn a daemon process in the background for the given key name.
@@ -615,7 +615,7 @@ const STANDARD_DAEMON_KEY_NAMES = ['default', 'Mail'] as const;
  * @param keyName - Daemon key name (e.g. "default", "Mail")
  * @returns The child process PID (or undefined if spawn failed)
  */
-function spawnDaemonBackground(pemPath: string, keyName: string): number | undefined {
+export function spawnDaemonBackground(pemPath: string, keyName: string): number | undefined {
   const logPath = daemonLogPath(keyName);
   const logDir = dirname(logPath);
 
@@ -705,43 +705,6 @@ async function ensureDaemon(session: Session, keyName: string): Promise<string> 
   );
 }
 
-/**
- * Background daemon health check — fire-and-forget.
- *
- * Called by cli.ts after Session creation to keep both standard daemons
- * ("default" and "Mail") alive. If a daemon is dead, spawns it in the
- * background WITHOUT waiting for it to be ready (non-blocking).
- *
- * Prerequisites:
- *   - The PEM file must exist (user has already created an identity)
- *   - If PEM doesn't exist, silently skips (no identity = no daemon possible)
- *
- * All errors are silently swallowed — this is a best-effort health check
- * and must never block or fail the main command.
- *
- * @param pemPath   - Path to the identity PEM file
- * @param principal - The principal ID derived from the PEM
- */
-export function ensureDaemonsBackground(
-  pemPath: string,
-  principal: string,
-): void {
-  const keyNames = STANDARD_DAEMON_KEY_NAMES;
-  for (const keyName of keyNames) {
-    const derivationId = `${principal}:${keyName}`;
-
-    try {
-      if (!isDaemonAlive(derivationId)) {
-        const pid = spawnDaemonBackground(pemPath, keyName);
-        if (pid) {
-          log.info(`${keyName} daemon was not running — auto-started (PID: ${pid})`);
-        }
-      }
-    } catch {
-      // Silently ignore — daemon health check must never block the main command
-    }
-  }
-}
 
 // ============================================================================
 // Helper Functions
