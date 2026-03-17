@@ -43,6 +43,7 @@ import { runDaemonUds } from './serve.js';
 import { isDaemonAlive, socketPath, runtimeDir } from './daemon.js';
 import { canisterCallError } from './error.js';
 import * as log from './log.js';
+import { generalParseAiIdToRecord, isReadableId } from './aiid.js';
 
 /**
  * Absolute path to cli.js (the CLI entry script).
@@ -1204,22 +1205,40 @@ async function cmdSendMsg(session: Session): Promise<void> {
 
   const { plaintext, payloadType, filename } = readMessageInput(text, file);
 
-  // Resolve recipient: if it looks like an agent name (contains # and .agent),
-  // resolve to principal via registry; otherwise treat as raw principal.
-  let recipientPrincipal: string;
+  // Resolve recipient principal from AI-ID (readable) or raw principal text.
+  let recipientPrincipal: string | undefined;
 
-  if (to.includes('#') && to.includes('.agent')) {
-    const registryActor = await session.getAnonymousRegistryActor();
-    const result = await registryActor.get_user_principal(to);
-    if (!result || result.length === 0) {
-      throw new Error(`Cannot resolve AI-ID "${to}" — agent not found in registry`);
+  const registryActor = await session.getAnonymousRegistryActor();
+  const input = to;
+
+  // Preferred path for readable IDs: unified structure id_string[#index].ai|.agent
+  if (isReadableId(input)) {
+    try {
+      const idRecord = generalParseAiIdToRecord(input);
+      const profile = await registryActor.user_profile_get_by_id(idRecord as any);
+
+      if (profile && profile.length > 0) {
+        const p = profile[0]!;
+        if (p.principal_id && p.principal_id.length > 0) {
+          recipientPrincipal = p.principal_id[0]!;
+        } else {
+          throw new Error(`Cannot resolve AI-Name "${to}" — profile has no principal bound`);
+        }
+      } else {
+        throw new Error(`Cannot resolve AI-Name "${to}" — profile not found in registry`);
+      }
+    } catch {
+      // Fall through to raw-principal path below if parsing fails
     }
-    recipientPrincipal = result[0]!.toText();
-  } else {
+  }
+
+  // Fallback: treat input as raw principal text
+  if (!recipientPrincipal) {
     try {
       recipientPrincipal = Principal.fromText(to).toText();
     } catch {
-      throw new Error(`Invalid recipient principal: "${to}"`);
+      // Still unresolved after readable ID and raw principal attempts
+      throw new Error(`Cannot resolve AI-Name "${to}" — profile not found in registry`);
     }
   }
 

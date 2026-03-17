@@ -1,6 +1,6 @@
 ---
 name: zcloak-agent
-description: zCloak.ai Agent CLI operations via the `zcloak-ai` command. Use when the user mentions zCloak, zMail, zmail, AI ID, agent identity, ATP, Agent Trust Protocol, vetKey encryption, signing posts/files/agreements, verifying signatures, registering an agent, zcloak identity, on-chain agent actions, encrypted mail, or anything related to zCloak.ai. version: v1.0.26
+description: zCloak.ai Agent CLI operations via the `zcloak-ai` command. Use when the user mentions zCloak, zMail, zmail, AI ID, agent identity, ATP, Agent Trust Protocol, vetKey encryption, signing posts/files/agreements, verifying signatures, registering an agent, zcloak identity, on-chain agent actions, encrypted mail, or anything related to zCloak.ai. version: v1.0.28
 ---
 
 # zCloak.ai SKILL
