@@ -49,7 +49,7 @@ vi.mock('../mailbox-store.js', () => ({
   cleanupTmpFiles: mockCleanupTmpFiles,
 }));
 
-import { run, postEnvelopeToZmail } from '../zmail.js';
+import { run, postEnvelopeToZmail, fetchMessageById } from '../zmail.js';
 import type { Session } from '../session.js';
 
 // Mock process.exit to prevent test runner from exiting
@@ -785,5 +785,154 @@ describe('postEnvelopeToZmail', () => {
 
     await expect(postEnvelopeToZmail('http://localhost:8080', envelope))
       .rejects.toThrow('zMail send failed: unknown_sender');
+  });
+});
+
+// ============================================================================
+// fetchMessageById (exported function)
+// ============================================================================
+
+describe('fetchMessageById', () => {
+  it('returns message from local cache when found', async () => {
+    const targetMsg = { id: 'msg-target', ai_id: 'sender', created_at: 100, kind: 17 };
+    // Simulate sync state exists and inbox cache contains the target message
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadInbox.mockReturnValue({
+      version: 1,
+      synced_at: 1710000000,
+      messages: [
+        { id: 'msg-other', ai_id: 'other', created_at: 50 },
+        targetMsg,
+      ],
+    });
+
+    const { session } = createTestSession([]);
+    const result = await fetchMessageById(session, 'msg-target');
+
+    // Should return the matched message without calling fetch (no network)
+    expect(result).toEqual(targetMsg);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('returns null from cache miss and empty server response', async () => {
+    // No local cache
+    mockReadSyncState.mockReturnValue(null);
+    // Server returns empty inbox
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ messages: [], cursor: undefined }),
+    });
+
+    const { session } = createTestSession([]);
+    const result = await fetchMessageById(session, 'nonexistent');
+
+    expect(result).toBeNull();
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
+  it('falls back to online fetch when message not in local cache', async () => {
+    const serverMsg = { id: 'msg-online', ai_id: 'remote-sender', created_at: 200, kind: 17, content: 'enc' };
+
+    // Local cache exists but does not contain the target message
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadInbox.mockReturnValue({
+      version: 1,
+      synced_at: 1710000000,
+      messages: [{ id: 'msg-other', ai_id: 'other', created_at: 50 }],
+    });
+
+    // Server returns the target message
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        messages: [serverMsg, { id: 'msg-another', ai_id: 'x', created_at: 300 }],
+        cursor: undefined,
+      }),
+    });
+
+    const { session } = createTestSession([]);
+    const result = await fetchMessageById(session, 'msg-online');
+
+    // Should have fallen through to online fetch and found the message
+    expect(result).toEqual(serverMsg);
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
+  it('handles multi-page online fetch to find a message', async () => {
+    const targetMsg = { id: 'msg-page2', ai_id: 'deep-sender', created_at: 300, kind: 17 };
+
+    // No local cache
+    mockReadSyncState.mockReturnValue(null);
+
+    // First page returns a different message with a cursor
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          messages: [{ id: 'msg-page1', ai_id: 'x', created_at: 100 }],
+          cursor: 'page2-cursor',
+        }),
+      })
+      // Second page returns the target message, no more cursor
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          messages: [targetMsg],
+          cursor: undefined,
+        }),
+      });
+
+    const { session } = createTestSession([]);
+    const result = await fetchMessageById(session, 'msg-page2');
+
+    expect(result).toEqual(targetMsg);
+    // Both pages should have been fetched
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    // Second fetch should include the pagination cursor
+    const secondUrl = mockFetch.mock.calls[1]![0] as string;
+    expect(secondUrl).toContain('after=page2-cursor');
+  });
+
+  it('throws on network error during online fallback', async () => {
+    // No local cache
+    mockReadSyncState.mockReturnValue(null);
+    // Server is unreachable
+    mockFetch.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+    const { session } = createTestSession([]);
+
+    await expect(fetchMessageById(session, 'msg-unreachable'))
+      .rejects.toThrow('Failed to connect to zMail');
+  });
+
+  it('throws on server error during online fallback', async () => {
+    // No local cache
+    mockReadSyncState.mockReturnValue(null);
+    // Server returns HTTP 500
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      json: () => Promise.resolve({ error: 'internal_server_error' }),
+    });
+
+    const { session } = createTestSession([]);
+
+    await expect(fetchMessageById(session, 'msg-error'))
+      .rejects.toThrow('Sync fetch failed');
+  });
+
+  it('skips online fetch when cache hit on first try', async () => {
+    // Verify that when the message is found locally, no network call is made at all
+    mockReadSyncState.mockReturnValue({ version: 1, last_sync_at: 1710000000 });
+    mockReadInbox.mockReturnValue({
+      version: 1,
+      synced_at: 1710000000,
+      messages: [{ id: 'cached-msg', ai_id: 'sender', created_at: 100 }],
+    });
+
+    const { session } = createTestSession([]);
+    await fetchMessageById(session, 'cached-msg');
+
+    // Zero network calls
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });

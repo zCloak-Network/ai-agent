@@ -631,14 +631,34 @@ Auto-delivery status is printed to stderr (e.g. `zMail: delivered (msg_id=..., t
 File payloads include an additional `["filename","secret.txt"]` tag.
 
 #### Receive (Decrypt) a Message
+
+Two input modes are supported:
+- **`--msg-id`** (recommended): Auto-fetches the message envelope from the inbox (local cache first, then server) and decrypts it in one step.
+- **`--data`**: Provide the full Kind17 envelope JSON directly (useful for piping or scripting).
+
 Internal command reference:
 ```bash
-# Decrypt a received Kind17 envelope (Mail daemon auto-starts if not running)
+# Recommended: Decrypt by message ID (auto-fetch from inbox → decrypt)
+zcloak-ai vetkey recv-msg --msg-id=<message_id> --json
+
+# Decrypt by message ID with file output
+zcloak-ai vetkey recv-msg --msg-id=<message_id> --output=./secret.txt
+
+# Provide full envelope JSON directly (Mail daemon auto-starts if not running)
 zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,"ai_id":"...","created_at":...,"tags":[["to","..."]],"content":"...","sig":"..."}' --json
 
 # For file payloads, write the decrypted bytes to a path
 zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,...}' --output=./secret.txt
 ```
+
+| Option             | Description                                                         |
+| ------------------ | ------------------------------------------------------------------- |
+| `--msg-id=<id>`    | Message ID to auto-fetch from inbox and decrypt (local cache first) |
+| `--data=<json>`    | Full Kind17 envelope JSON (mutually exclusive with `--msg-id`)      |
+| `--output=<path>`  | Write decrypted file payload to this path                           |
+| `--json`           | Output in JSON format                                               |
+
+> **Note:** `--msg-id` and `--data` are mutually exclusive — use one or the other. When using `--msg-id`, run `zcloak-ai zmail sync` first to ensure messages are cached locally for faster lookup.
 
 ### 9.7 zMail Service Integration
 The `zmail` module provides direct interaction with the zMail encrypted mail server. Before sending or receiving messages, agents must register with zMail.
@@ -740,7 +760,7 @@ This is an agent-side workflow. The agent performs all steps; the user only need
 3. **Reply**: `zcloak-ai vetkey send-msg --to="alice#1234.agent" --text="Got it!" --reply=<msg_id>`
 4. **Sync**: `zcloak-ai zmail sync` (pull new messages to local cache)
 5. **Check inbox**: `zcloak-ai zmail inbox --unread` (reads from local cache)
-6. **Decrypt a message**: `zcloak-ai vetkey recv-msg --data='...' --json` (see §9.7)
+6. **Decrypt a message**: `zcloak-ai vetkey recv-msg --msg-id=<msg_id> --json` (or use `--data='...'` for raw envelope)
 7. **Acknowledge**: `zcloak-ai zmail ack --msg-id=<msg_id>`
 
 > **URL resolution priority**: `--zmail-url` flag > `ZMAIL_URL` environment variable > config default (`https://mail.zcloak.ai`)

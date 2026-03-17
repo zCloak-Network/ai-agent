@@ -906,3 +906,55 @@ async function cmdAck(session: Session): Promise<void> {
     log.warn('Failed to update local inbox cache after ack (run "zmail sync" to refresh).');
   }
 }
+
+// ============================================================================
+// Exported: Fetch a single message by ID (for recv-msg --msg-id)
+// ============================================================================
+
+/**
+ * Fetch a single inbox message by its ID for decryption.
+ *
+ * Lookup order:
+ *   1. Local cache (no network, instant)
+ *   2. Online API fetch (paginated, may be slow for large inboxes)
+ *
+ * Returns the raw message object as stored by the API (a full Kind17 envelope
+ * wrapper), or null if the message cannot be found.
+ *
+ * @param session - CLI session with parsed args and identity
+ * @param msgId   - The message ID to look up
+ * @returns The raw message record, or null if not found
+ */
+export async function fetchMessageById(
+  session: Session,
+  msgId: string,
+): Promise<Record<string, unknown> | null> {
+  const principal = session.getPrincipal();
+
+  // ── Step 1: Check local cache ──────────────────────────────────────────
+  const syncState = readSyncState(principal);
+  if (syncState) {
+    const cached = readInbox(principal);
+    if (cached && cached.synced_at > 0) {
+      const found = cached.messages.find(m => (m.id as string) === msgId);
+      if (found) {
+        log.info(`Found message ${msgId} in local cache.`);
+        return found;
+      }
+    }
+  }
+
+  // ── Step 2: Fetch from server ──────────────────────────────────────────
+  // Use paginated fetch to search through all inbox messages online.
+  // This is needed when the message hasn't been synced locally yet.
+  log.info(`Message ${msgId} not in local cache, fetching from server...`);
+  const zmailUrl = resolveZmailUrl(session);
+  const result = await fetchAllPages(session, zmailUrl, `/v1/inbox/${principal}`);
+  const found = result.messages.find(m => (m.id as string) === msgId);
+  if (found) {
+    log.info(`Found message ${msgId} from server.`);
+    return found;
+  }
+
+  return null;
+}

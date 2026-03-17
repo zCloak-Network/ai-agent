@@ -447,4 +447,130 @@ describe('vetkey encrypted messaging', () => {
     expect(result.plaintext).toBe('');
     expect(result.plaintext_size).toBe(0);
   });
+
+  it('recv-msg rejects when both --data and --msg-id are provided', async () => {
+    const recipient = Secp256k1KeyIdentity.generate();
+    const session = mockSession(
+      ['recv-msg'],
+      { data: '{}', 'msg-id': 'some-id' },
+      recipient,
+    );
+
+    await expect(run(session)).rejects.toThrow('Cannot specify both --data and --msg-id');
+  });
+
+  it('recv-msg shows helpful error when neither --data nor --msg-id is provided', async () => {
+    const recipient = Secp256k1KeyIdentity.generate();
+    const session = mockSession(
+      ['recv-msg'],
+      {},
+      recipient,
+    );
+
+    await expect(run(session)).rejects.toThrow('Either --data=<json_envelope> or --msg-id=<id> is required');
+  });
+
+  it('recv-msg with --msg-id fetches message from inbox and decrypts', async () => {
+    // First, generate a valid envelope via send-msg
+    const sender = Secp256k1KeyIdentity.generate();
+    const recipient = Secp256k1KeyIdentity.generate();
+    const recipientPrincipal = recipient.getPrincipal().toText();
+    const plaintext = 'fetched by msg-id';
+
+    const sendSession = mockSession(
+      ['send-msg'],
+      { to: recipientPrincipal, text: plaintext },
+      sender,
+    );
+
+    await run(sendSession);
+    const envelope = readLastJsonLog();
+    const envelopeId = envelope.id as string;
+
+    // Mock fetchMessageById to return this envelope
+    const zmailMod = await import('../zmail.js');
+    const fetchSpy = vi.spyOn(zmailMod, 'fetchMessageById').mockResolvedValue(envelope);
+
+    // Set up daemon to return the correct plaintext
+    daemonResponse = {
+      id: 1,
+      result: {
+        data_base64: Buffer.from(plaintext, 'utf-8').toString('base64'),
+        plaintext_size: Buffer.byteLength(plaintext, 'utf-8'),
+      },
+    };
+    mockLog.mockClear();
+
+    const recvSession = mockSession(
+      ['recv-msg'],
+      { 'msg-id': envelopeId, json: true },
+      recipient,
+    );
+
+    await run(recvSession);
+
+    // Verify fetchMessageById was called with the correct msg-id
+    expect(fetchSpy).toHaveBeenCalledWith(recvSession, envelopeId);
+
+    // Verify decryption succeeded
+    const result = readLastJsonLog();
+    expect(result.payload_type).toBe('text');
+    expect(result.plaintext).toBe(plaintext);
+
+    fetchSpy.mockRestore();
+  });
+
+  it('recv-msg with --msg-id throws when message not found', async () => {
+    const recipient = Secp256k1KeyIdentity.generate();
+
+    // Mock fetchMessageById to return null (message not found)
+    const zmailMod = await import('../zmail.js');
+    const fetchSpy = vi.spyOn(zmailMod, 'fetchMessageById').mockResolvedValue(null);
+
+    const recvSession = mockSession(
+      ['recv-msg'],
+      { 'msg-id': 'nonexistent-id' },
+      recipient,
+    );
+
+    await expect(run(recvSession)).rejects.toThrow('Message not found: nonexistent-id');
+
+    fetchSpy.mockRestore();
+  });
+
+  // ── Empty-string edge cases (truthy vs explicit-presence) ──────────
+
+  it('recv-msg rejects empty --msg-id value', async () => {
+    const recipient = Secp256k1KeyIdentity.generate();
+    const session = mockSession(
+      ['recv-msg'],
+      { 'msg-id': '' },
+      recipient,
+    );
+
+    await expect(run(session)).rejects.toThrow('--msg-id requires a non-empty message ID');
+  });
+
+  it('recv-msg rejects empty --data value', async () => {
+    const recipient = Secp256k1KeyIdentity.generate();
+    const session = mockSession(
+      ['recv-msg'],
+      { data: '' },
+      recipient,
+    );
+
+    await expect(run(session)).rejects.toThrow('--data requires a non-empty JSON value');
+  });
+
+  it('recv-msg detects mutual exclusion even when one value is empty string', async () => {
+    const recipient = Secp256k1KeyIdentity.generate();
+    // --data='<valid>' --msg-id='' — both provided, should trigger mutual exclusion
+    const session = mockSession(
+      ['recv-msg'],
+      { data: '{"id":"x"}', 'msg-id': '' },
+      recipient,
+    );
+
+    await expect(run(session)).rejects.toThrow('Cannot specify both --data and --msg-id');
+  });
 });

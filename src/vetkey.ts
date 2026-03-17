@@ -150,6 +150,7 @@ function showHelp(): void {
   console.log('  --to=<AI-ID|principal>  Recipient AI-ID or principal (for send-msg)');
   console.log('  --reply=<msg_id>        Reply to a parent message (for send-msg)');
   console.log('  --data=<json>           Encrypted message JSON envelope (for recv-msg)');
+  console.log('  --msg-id=<id>           Message ID to auto-fetch and decrypt (for recv-msg)');
   console.log('  --no-zmail              Skip auto-POST to zMail (send-msg only)');
   console.log('  --zmail-url=<url>       Override zMail server URL');
 }
@@ -1364,8 +1365,11 @@ async function cmdSendMsg(session: Session): Promise<void> {
  * The daemon holds the VetKey for "{recipient_principal}:Mail" and
  * performs IBE decryption via the "ibe-decrypt" RPC method.
  *
- * Options:
- *   --data=<json>     (required) Kind17 envelope JSON
+ * Two input modes:
+ *   --data=<json>     Provide the full Kind17 envelope JSON directly
+ *   --msg-id=<id>     Auto-fetch the envelope from inbox (local cache → server)
+ *
+ * Additional options:
  *   --output=<path>   Write decrypted file payload to this path
  *   --json            Output in JSON format
  */
@@ -1373,14 +1377,60 @@ async function cmdRecvMsg(session: Session): Promise<void> {
   const args = session.args;
   const rawData = args['data'];
   if (rawData === true) throw new Error('--data requires a JSON value');
-  const dataStr = rawData as string | undefined;
   const rawOutput = args['output'];
   if (rawOutput === true) throw new Error('--output requires a path');
   const output = rawOutput as string | undefined;
   const jsonOutput = !!args['json'];
 
+  // --msg-id: convenience mode — auto-fetch the message envelope from inbox
+  const rawMsgId = args['msg-id'];
+  if (rawMsgId === true) throw new Error('--msg-id requires a message ID value');
+
+  // Determine which parameters were explicitly provided (regardless of value).
+  // Using !== undefined instead of truthy check so that empty strings like
+  // --data='' or --msg-id= are detected as "provided" and validated properly.
+  const dataProvided = rawData !== undefined;
+  const msgIdProvided = rawMsgId !== undefined;
+
+  // Validate: exactly one of --data or --msg-id must be provided
+  if (dataProvided && msgIdProvided) {
+    throw new Error('Cannot specify both --data and --msg-id — use one or the other');
+  }
+
+  let dataStr: string | undefined;
+
+  if (msgIdProvided) {
+    // Validate non-empty after confirming the flag was explicitly passed
+    const msgId = rawMsgId as string;
+    if (!msgId) {
+      throw new Error('--msg-id requires a non-empty message ID (e.g. --msg-id=abc123)');
+    }
+    // Fetch the envelope from inbox (local cache → online)
+    const { fetchMessageById } = await import('./zmail.js');
+    const message = await fetchMessageById(session, msgId);
+    if (!message) {
+      throw new Error(
+        `Message not found: ${msgId}\n` +
+        'Hint: run "zcloak-ai zmail sync" first, or check that the message ID is correct.',
+      );
+    }
+    dataStr = JSON.stringify(message);
+  } else if (dataProvided) {
+    // Validate non-empty after confirming the flag was explicitly passed
+    const data = rawData as string;
+    if (!data) {
+      throw new Error('--data requires a non-empty JSON value (e.g. --data=\'{"id":"...","kind":17,...}\')');
+    }
+    dataStr = data;
+  }
+
   if (!dataStr) {
-    throw new Error('--data=<json_envelope> is required' + JSON.stringify(args));
+    throw new Error(
+      'Either --data=<json_envelope> or --msg-id=<id> is required.\n' +
+      'Usage:\n' +
+      '  zcloak-ai vetkey recv-msg --msg-id=<message_id>         (auto-fetch from inbox)\n' +
+      '  zcloak-ai vetkey recv-msg --data=\'<kind17_json>\'         (provide envelope directly)',
+    );
   }
 
   // Parse and validate the Kind17 envelope
