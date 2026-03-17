@@ -532,43 +532,26 @@ async function cmdStop(session: Session): Promise<void> {
 }
 
 /**
- * status: Query daemon status.
- *
- * For standard daemons (default, Mail): auto-starts if not running, so users
- * never need to manually launch a daemon before querying its status.
- *
- * For custom key names: only reports the current state — does NOT auto-start,
- * since custom daemons require explicit `vetkey serve` to start. This keeps
- * `status` side-effect-free for non-standard daemons.
+ * status: Query daemon status without starting it.
  */
 async function cmdStatus(session: Session): Promise<void> {
   const args = session.args;
   if (args['key-name'] === true) throw new Error("--key-name requires a value (e.g. --key-name=mykey)");
   const keyName = (args['key-name'] as string) || 'default';
   const jsonOutput = !!args['json'];
+  const principal = session.getPrincipal();
+  const derivationId = `${principal}:${keyName}`;
 
-  const isStandard = (STANDARD_DAEMON_KEY_NAMES as readonly string[]).includes(keyName);
-  let sockPath: string;
-
-  if (isStandard) {
-    // Standard daemon: auto-start if needed
-    sockPath = await ensureDaemon(session, keyName);
-  } else {
-    // Custom daemon: report-only, no auto-start
-    const principal = session.getPrincipal();
-    const derivationId = `${principal}:${keyName}`;
-
-    if (!isDaemonAlive(derivationId)) {
-      if (jsonOutput) {
-        console.log(JSON.stringify({ status: "not_running", key_name: keyName }));
-      } else {
-        console.log(`Daemon '${keyName}' is not running. Use 'zcloak-ai vetkey serve --key-name=${keyName}' to start it.`);
-      }
-      return;
+  if (!isDaemonAlive(derivationId)) {
+    if (jsonOutput) {
+      console.log(JSON.stringify({ status: "not_running", key_name: keyName }));
+    } else {
+      console.log(`Daemon '${keyName}' is not running. Use 'zcloak-ai vetkey serve --key-name=${keyName}' to start it.`);
     }
-
-    sockPath = socketPath(derivationId);
+    return;
   }
+
+  const sockPath = socketPath(derivationId);
 
   // Connect to socket and send status
   const response = await sendRpcToSocket(sockPath, {
@@ -596,12 +579,6 @@ async function cmdStatus(session: Session): Promise<void> {
 // ============================================================================
 // Daemon Auto-Start
 // ============================================================================
-
-/** Maximum time to wait for the daemon to become ready (ms) */
-const DAEMON_READY_TIMEOUT_MS = 30_000;
-
-/** Polling interval when waiting for daemon socket to appear (ms) */
-const DAEMON_POLL_INTERVAL_MS = 500;
 
 /** Key names for the two standard daemons that should always be kept alive */
 export const STANDARD_DAEMON_KEY_NAMES = ['default', 'Mail'] as const;
@@ -687,53 +664,6 @@ export function startDaemonBackground(pemPath: string, keyName: string): number 
     return undefined;
   }
 }
-
-/**
- * Ensure a daemon with the given key name is running for the session's principal.
- *
- * If the daemon is already alive, returns the socket path immediately.
- * Otherwise spawns a background `zcloak-ai vetkey serve` process and
- * polls until the socket file appears or the timeout is reached.
- *
- * @param session  - CLI session (provides identity / PEM path)
- * @param keyName  - Daemon key name (e.g. "default", "Mail")
- * @returns Socket path of the running daemon
- * @throws Error if the daemon fails to start within the timeout
- */
-async function ensureDaemon(session: Session, keyName: string): Promise<string> {
-  const principal = session.getPrincipal();
-  const derivationId = `${principal}:${keyName}`;
-
-  // Already running? Return immediately.
-  if (isDaemonAlive(derivationId)) {
-    return socketPath(derivationId);
-  }
-
-  log.info(`${keyName} daemon is not running. Starting it automatically...`);
-
-  const pid = startDaemonBackground(session.getPemPath(), keyName);
-  log.info(`${keyName} daemon spawned (PID: ${pid ?? 'unknown'}). Waiting for ready...`);
-
-  // Poll for the socket file to appear (daemon writes PID + creates socket on ready)
-  const sock = socketPath(derivationId);
-  const logPath = daemonLogPath(keyName);
-  const deadline = Date.now() + DAEMON_READY_TIMEOUT_MS;
-
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, DAEMON_POLL_INTERVAL_MS));
-
-    if (isDaemonAlive(derivationId) && existsSync(sock)) {
-      log.info(`${keyName} daemon is ready. Socket: ${sock}`);
-      return sock;
-    }
-  }
-
-  throw new Error(
-    `${keyName} daemon failed to start within ${DAEMON_READY_TIMEOUT_MS / 1000}s. ` +
-    `Check the log at ${logPath} for details.`,
-  );
-}
-
 
 // ============================================================================
 // Helper Functions
@@ -1484,8 +1414,14 @@ async function cmdRecvMsg(session: Session): Promise<void> {
     throw e;
   }
 
-  // Ensure Mail daemon is running (auto-start if needed, wait for ready), then decrypt
-  const sockPath = await ensureDaemon(session, 'Mail');
+  const mailDerivationId = `${principal}:Mail`;
+  if (!isDaemonAlive(mailDerivationId)) {
+    throw new Error(
+      "Mail daemon is not running. Start it first with 'zcloak-ai vetkey serve --key-name=Mail'.",
+    );
+  }
+
+  const sockPath = socketPath(mailDerivationId);
   const response = await sendRpcToSocket(sockPath, {
     id: 1,
     method: 'ibe-decrypt',
