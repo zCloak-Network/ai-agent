@@ -105,7 +105,10 @@ function getLocalCliVersion(): string | null {
     debug("pre-check local CLI version =", version ?? "null");
     return version;
   } catch {
-    debug("pre-check failed to read local package version from", LOCAL_PACKAGE_JSON);
+    debug(
+      "pre-check failed to read local package version from",
+      LOCAL_PACKAGE_JSON,
+    );
     return null;
   }
 }
@@ -130,10 +133,13 @@ function shouldCheck(): boolean {
     if (isNaN(timestamp)) return true;
     const delta = Date.now() - timestamp;
     const should = delta >= CHECK_INTERVAL_MS;
-    debug(
-      "pre-check timestamp read",
-      { file: CHECK_FILE, timestamp, deltaMs: delta, intervalMs: CHECK_INTERVAL_MS, shouldCheck: should },
-    );
+    debug("pre-check timestamp read", {
+      file: CHECK_FILE,
+      timestamp,
+      deltaMs: delta,
+      intervalMs: CHECK_INTERVAL_MS,
+      shouldCheck: should,
+    });
     return should;
   } catch {
     debug("pre-check timestamp read failed, forcing check");
@@ -247,6 +253,7 @@ function downloadText(url: string): Promise<string | null> {
  * Network failures or filesystem failures are silently ignored.
  */
 async function updateSkill(): Promise<void> {
+  debug("pre-check starting workspace", process.cwd());
   debug("pre-check refreshing workspace SKILL.md from", SKILL_MD_URL);
   const remoteContent = await downloadText(SKILL_MD_URL);
   if (!remoteContent) {
@@ -257,7 +264,10 @@ async function updateSkill(): Promise<void> {
   try {
     const targetDir = path.dirname(WORKSPACE_SKILL_PATH);
     const tempPath = `${WORKSPACE_SKILL_PATH}.tmp`;
-    debug("pre-check writing workspace SKILL.md", { target: WORKSPACE_SKILL_PATH, temp: tempPath });
+    debug("pre-check writing workspace SKILL.md", {
+      target: WORKSPACE_SKILL_PATH,
+      temp: tempPath,
+    });
     fs.mkdirSync(targetDir, { recursive: true });
     fs.writeFileSync(tempPath, remoteContent, "utf-8");
     fs.renameSync(tempPath, WORKSPACE_SKILL_PATH);
@@ -310,7 +320,11 @@ export async function preCheck(): Promise<PreCheckResult> {
   }
 
   // --- Version mismatch → first update the CLI package itself ---
-  debug("pre-check update required", { localVersion, remoteVersion, skillPath: WORKSPACE_SKILL_PATH });
+  debug("pre-check update required", {
+    localVersion,
+    remoteVersion,
+    skillPath: WORKSPACE_SKILL_PATH,
+  });
   const cliUpdated = updateCli();
   if (!cliUpdated) {
     recordCheckTime();
@@ -335,7 +349,7 @@ export async function preCheck(): Promise<PreCheckResult> {
       "[zcloak-ai] Version update detected!",
       `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (updated)`,
       `[zcloak-ai] Workspace SKILL.md target: ${WORKSPACE_SKILL_PATH}`,
-      `[zcloak-ai] if updated, tell the user version changed. Also you must reload the updated ${WORKSPACE_SKILL_PATH} and re-run the previous command because of those changes.`,
+      `[zcloak-ai] if updated, tell the user version changed. and 1.  ${WORKSPACE_SKILL_PATH} maybe not the claw workingspace, you may move the SKILL.md to <claw_workingspace>/skills/zcloak-ai-agent/SKILL.md"; 2. also you must reload the updated SKILL.md and re-run the previous command because of those changes.`,
     ].join("\n"),
   };
 }
