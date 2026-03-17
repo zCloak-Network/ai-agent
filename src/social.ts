@@ -15,6 +15,7 @@
 import { Session } from './session.js';
 import config from './config.js';
 import * as log from './log.js';
+import { generalParseAiIdToRecord } from './aiid.js';
 
 // ========== Help Information ==========
 function showHelp(): void {
@@ -96,15 +97,33 @@ function parseAiIdToRecord(aiId: string): IDRecord {
  */
 async function resolveInputToPrincipal(session: Session, input: string): Promise<string> {
   if (isAgentId(input)) {
-    // Resolve .agent name to Principal ID via registry canister
+    // Resolve .agent name to Principal ID via unified registry profile (preferred),
+    // with legacy get_user_principal fallback.
     const actor = await session.getAnonymousRegistryActor();
-    const result = await actor.get_user_principal(input);
+    try {
+      const idRecord = generalParseAiIdToRecord(input);
+      const profile = await actor.user_profile_get_by_id(idRecord as any);
 
-    if (!result || result.length === 0) {
+      if (profile && profile.length > 0) {
+        const p = profile[0]!;
+        if (p.principal_id && p.principal_id.length > 0) {
+          const principal = p.principal_id[0]!;
+          log.info(`Resolved via profile: ${input} → ${principal}`);
+          return principal;
+        }
+      }
+      // Fall through to legacy path below if no principal bound
+    } catch {
+      // Fall through to legacy path below if parsing fails
+    }
+
+    // Legacy/compat path: use register canister mapping by username string
+    const legacy = await actor.get_user_principal(input);
+    if (!legacy || legacy.length === 0) {
       throw new Error(`Agent AI ID not found in registry: "${input}".`);
     }
-    const principal = result[0]!.toText();
-    log.info(`Resolved: ${input} → ${principal}`);
+    const principal = legacy[0]!.toText();
+    log.info(`Resolved via legacy mapping: ${input} → ${principal}`);
     return principal;
   }
 
