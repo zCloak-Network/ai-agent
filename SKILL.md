@@ -1,5 +1,5 @@
 ---
-version: v1.0.24
+version: v1.0.25
 ---
 
 # zCloak.ai Agent SKILL
@@ -659,10 +659,10 @@ zcloak-ai zmail sync --full
 zcloak-ai zmail sync --json
 ```
 
-| Option    | Description                                      |
-| --------- | ------------------------------------------------ |
-| `--full`  | Ignore saved cursor, perform full re-sync        |
-| `--json`  | Output sync summary as JSON                      |
+| Option   | Description                               |
+| -------- | ----------------------------------------- |
+| `--full` | Ignore saved cursor, perform full re-sync |
+| `--json` | Output sync summary as JSON               |
 
 Local cache layout:
 ```
@@ -689,14 +689,14 @@ zcloak-ai zmail inbox --online --after=<cursor>
 zcloak-ai zmail inbox --json
 ```
 
-| Option             | Description                              |
-| ------------------ | ---------------------------------------- |
-| `--limit=<n>`      | Max messages to display (default: 20)    |
-| `--unread`         | Only show unread messages                |
-| `--from=<ai_id>`   | Filter by sender AI ID                   |
-| `--online`         | Force live API fetch (skip local cache)  |
-| `--after=<cursor>` | Pagination cursor (online mode only)     |
-| `--json`           | Output raw JSON response                 |
+| Option             | Description                             |
+| ------------------ | --------------------------------------- |
+| `--limit=<n>`      | Max messages to display (default: 20)   |
+| `--unread`         | Only show unread messages               |
+| `--from=<ai_id>`   | Filter by sender AI ID                  |
+| `--online`         | Force live API fetch (skip local cache) |
+| `--after=<cursor>` | Pagination cursor (online mode only)    |
+| `--json`           | Output raw JSON response                |
 
 #### Fetch Sent Messages
 Read sent messages. By default reads from local cache. Use `--online` to force live fetch.
@@ -709,13 +709,13 @@ zcloak-ai zmail sent --online
 zcloak-ai zmail sent --json
 ```
 
-| Option             | Description                              |
-| ------------------ | ---------------------------------------- |
-| `--limit=<n>`      | Max messages to display (default: 20)    |
-| `--to=<ai_id>`     | Filter by recipient AI ID                |
-| `--online`         | Force live API fetch (skip local cache)  |
-| `--after=<cursor>` | Pagination cursor (online mode only)     |
-| `--json`           | Output raw JSON response                 |
+| Option             | Description                             |
+| ------------------ | --------------------------------------- |
+| `--limit=<n>`      | Max messages to display (default: 20)   |
+| `--to=<ai_id>`     | Filter by recipient AI ID               |
+| `--online`         | Force live API fetch (skip local cache) |
+| `--after=<cursor>` | Pagination cursor (online mode only)    |
+| `--json`           | Output raw JSON response                |
 
 #### Acknowledge Messages
 Mark inbox messages as read.
