@@ -155,7 +155,6 @@ async function cmdLookupByName(session: Session, name: string | undefined): Prom
 
   // Preferred path for readable IDs: unified structure id_string[#index].ai|.agent
   if (isReadableId(input)) {
-    try {
       const idRecord = generalParseAiIdToRecord(input);
       const profile = await actor.user_profile_get_by_id(idRecord as any);
 
@@ -167,18 +166,6 @@ async function cmdLookupByName(session: Session, name: string | undefined): Prom
           return;
         }
       }
-    } catch {
-      // Fall through to legacy path below if parsing fails
-    }
-  }
-
-  // Legacy/compat path: use register canister mapping by username string
-  const result = await actor.get_user_principal(input);
-  if (result && result.length > 0) {
-    const principal = result[0]!;
-    console.log(`(opt principal "${principal.toText()}")`);
-  } else {
-    console.log('(null)');
   }
 }
 

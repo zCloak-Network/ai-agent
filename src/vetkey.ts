@@ -1213,7 +1213,6 @@ async function cmdSendMsg(session: Session): Promise<void> {
 
   // Preferred path for readable IDs: unified structure id_string[#index].ai|.agent
   if (isReadableId(input)) {
-    try {
       const idRecord = generalParseAiIdToRecord(input);
       const profile = await registryActor.user_profile_get_by_id(idRecord as any);
 
@@ -1227,9 +1226,6 @@ async function cmdSendMsg(session: Session): Promise<void> {
       } else {
         throw new Error(`Cannot resolve AI-Name "${to}" — profile not found in registry`);
       }
-    } catch {
-      // Fall through to raw-principal path below if parsing fails
-    }
   }
 
   // Fallback: treat input as raw principal text
