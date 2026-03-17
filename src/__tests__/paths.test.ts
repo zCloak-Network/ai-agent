@@ -30,7 +30,6 @@ import {
   daemonLogPath,
   lastUpdateCheckPath,
   mailboxDir,
-  legacyRuntimeDir,
 } from '../paths.js';
 
 describe('paths', () => {
@@ -104,18 +103,6 @@ describe('paths', () => {
       expect(mailboxDir(principal)).toBe(
         path.join(fakeHome, '.config', 'zcloak', 'mailboxes', principal),
       );
-    });
-  });
-
-  // ── Legacy paths ─────────────────────────────────────────────────────
-
-  describe('legacyRuntimeDir', () => {
-    it('returns ~/.vetkey-tool/ (old location)', () => {
-      expect(legacyRuntimeDir()).toBe(path.join(fakeHome, '.vetkey-tool'));
-    });
-
-    it('does NOT overlap with the new runtimeDir', () => {
-      expect(legacyRuntimeDir()).not.toBe(runtimeDir());
     });
   });
 });

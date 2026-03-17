@@ -1380,7 +1380,7 @@ async function cmdRecvMsg(session: Session): Promise<void> {
   const jsonOutput = !!args['json'];
 
   if (!dataStr) {
-    throw new Error('--data=<json_envelope> is required');
+    throw new Error('--data=<json_envelope> is required' + JSON.stringify(args));
   }
 
   // Parse and validate the Kind17 envelope

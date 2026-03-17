@@ -40,7 +40,6 @@ import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity.js';
 import { STANDARD_DAEMON_KEY_NAMES, startDaemonBackground, stopAllDaemons } from './vetkey.js';
 import { isDaemonAlive } from './daemon.js';
 import * as log from './log.js';
-import { migrateLegacyRuntimeDir } from './compat.js';
 
 /** ESM equivalent of __dirname */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,9 +109,6 @@ function showHelp(): void {
  * so the sub-script receives the same parsed arguments as before.
  */
 async function main(): Promise<void> {
-  // Migrate legacy ~/.vetkey-tool/ → ~/.config/zcloak/run/ (backward compat).
-  // Safe to call every invocation; no-ops when already migrated.
-  migrateLegacyRuntimeDir();
 
   // Get module name (skip node and script path)
   const moduleName = process.argv[2];

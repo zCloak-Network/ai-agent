@@ -81,12 +81,3 @@ export function lastUpdateCheckPath(): string {
 export function mailboxDir(principal: string): string {
   return join(mailboxesRoot(), principal);
 }
-
-// ============================================================================
-// Legacy Paths (for backward compatibility migration)
-// ============================================================================
-
-/** Old daemon runtime directory: ~/.vetkey-tool/ (migrated to ~/.config/zcloak/run/) */
-export function legacyRuntimeDir(): string {
-  return join(homedir(), '.vetkey-tool');
-}
