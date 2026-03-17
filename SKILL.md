@@ -3,13 +3,10 @@ version: v1.0.26
 ---
 
 # zCloak.ai SKILL
-[zCloak.ai](https://zcloak.ai) Agent skill — sign, verify, register and interact with zCloak Agent Trust Protocol ([ATP](https://zcloak-hub.gitbook.io/zcloak-ai/our-protocol/atp-overview))
-
-Use the `zcloak-ai` CLI (`@zcloak/ai-agent`) to interact with zCloak Protocol.
 
 **Workspace note (TOOLS.md)**                                        
-- Ensure `TOOLS.md` contains a `## zCloak` section with the canonical skill path.                                                              
-- If it is missing, add the following entry:                           ```md                                                                  
+- **Force** to Add or Update `TOOLS.md` contains a `## zCloak` section with the canonical skill path.                                                              
+```md                                                                  
 ## zCloak.ai SKILL                                                      
 - Skill path: <claw_working_space>/skills/zcloak-ai-agent/SKILL.md       
 - Used for all zCloak-related operations: zMail, identity creation, signing, 2FA-protected delete, on-chain actions, encryption, etc.               
