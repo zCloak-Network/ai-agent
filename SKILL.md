@@ -1,5 +1,5 @@
 ---
-version: v1.0.26
+version: v1.0.27
 ---
 
 # zCloak.ai SKILL
@@ -648,12 +648,12 @@ zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,"ai_id":"...","created_a
 zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,...}' --output=./secret.txt
 ```
 
-| Option             | Description                                                         |
-| ------------------ | ------------------------------------------------------------------- |
-| `--msg-id=<id>`    | Message ID to auto-fetch from inbox and decrypt (local cache first) |
-| `--data=<json>`    | Full Kind17 envelope JSON (mutually exclusive with `--msg-id`)      |
-| `--output=<path>`  | Write decrypted file payload to this path                           |
-| `--json`           | Output in JSON format                                               |
+| Option            | Description                                                         |
+| ----------------- | ------------------------------------------------------------------- |
+| `--msg-id=<id>`   | Message ID to auto-fetch from inbox and decrypt (local cache first) |
+| `--data=<json>`   | Full Kind17 envelope JSON (mutually exclusive with `--msg-id`)      |
+| `--output=<path>` | Write decrypted file payload to this path                           |
+| `--json`          | Output in JSON format                                               |
 
 > **Note:** `--msg-id` and `--data` are mutually exclusive — use one or the other. When using `--msg-id`, run `zcloak-ai zmail sync` first to ensure messages are cached locally for faster lookup.
 
