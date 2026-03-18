@@ -93,6 +93,47 @@ function tryAcquireDaemonStartLock(derivationId: string): boolean {
   }
 }
 
+function resolveWarmUpContext(argv: string[]): { pemPath: string; principal: string } | null {
+  const identityArg = argv.find(a => a.startsWith('--identity='));
+  const pemPath = identityArg
+    ? identityArg.split('=').slice(1).join('=')
+    : DEFAULT_PEM_PATH;
+
+  if (!fs.existsSync(pemPath)) return null;
+
+  try {
+    const identity = loadIdentityFromPath(pemPath);
+    return {
+      pemPath,
+      principal: identity.getPrincipal().toText(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function warmUpDaemonForCurrentIdentity(argv: string[]): void {
+  const context = resolveWarmUpContext(argv);
+  if (!context) return;
+
+  const { pemPath, principal } = context;
+
+  if (isDaemonAlive(principal)) return;
+  if (!tryAcquireDaemonStartLock(principal)) {
+    log.debug('Daemon warm-up skipped because start lock is already held', {
+      principal,
+      lockPath: daemonStartLockPath(principal),
+    });
+    return;
+  }
+
+  try {
+    startDaemonBackground(pemPath, principal);
+  } catch {
+    // Best-effort — ignore spawn failures
+  }
+}
+
 function showHelp(): void {
   console.log('zCloak.ai Agent CLI');
   console.log('');
@@ -185,6 +226,10 @@ async function main(): Promise<void> {
       // Best-effort — don't block upgrade on daemon stop failure
     }
 
+    // Immediately warm the current principal daemon back up on the updated
+    // bits so the next CLI command does not pay another cold-start cost.
+    warmUpDaemonForCurrentIdentity(process.argv);
+
     log.info(checkResult.message);
     process.exit(0);
   }
@@ -209,40 +254,7 @@ async function main(): Promise<void> {
       (moduleName === 'vetkey' && process.argv[3] === 'serve') ||
       (moduleName === 'identity' && process.argv[3] === 'generate');
     if (skipWarmUp) return;
-
-    // Step 2: Resolve PEM path
-    const identityArg = process.argv.find(a => a.startsWith('--identity='));
-    const pemPath = identityArg
-      ? identityArg.split('=').slice(1).join('=')
-      : DEFAULT_PEM_PATH;
-
-    // Step 3: PEM file must exist (no identity → no daemon)
-    if (!fs.existsSync(pemPath)) return;
-
-    // Step 4: Load identity and extract principal
-    let principal: string;
-    try {
-      const identity = loadIdentityFromPath(pemPath);
-      principal = identity.getPrincipal().toText();
-    } catch {
-      return; // Identity load failed — skip warm-up
-    }
-
-    // Step 5: Start the per-principal daemon if needed
-    if (isDaemonAlive(principal)) return;
-    if (!tryAcquireDaemonStartLock(principal)) {
-      log.debug('Daemon warm-up skipped because start lock is already held', {
-        principal,
-        lockPath: daemonStartLockPath(principal),
-      });
-      return;
-    }
-
-    try {
-      startDaemonBackground(pemPath, principal);
-    } catch {
-      // Best-effort — ignore spawn failures
-    }
+    warmUpDaemonForCurrentIdentity(process.argv);
   })();
 
   // Load and execute sub-script's run() function.

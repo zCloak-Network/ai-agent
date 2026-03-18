@@ -72,6 +72,8 @@ export async function notifyOpenClawMainAgentOfNewMail(
     'Channel account context from openclaw status --json --deep:',
     ...channelContext,
     'Choose an appropriate channel from this account context and decide how to send the notification.',
+    'Do not rely on fields like running or connected when deciding whether notification can be sent.',
+    'Whether sending will work depends on the actual channel/account context and configuration at that moment.',
     'If notification cannot be sent, explain to the user what channel configuration is needed.',
   ].join('\n\n');
 
