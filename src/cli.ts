@@ -38,11 +38,12 @@ import { Session } from './session.js';
 import { preCheck } from './pre-check.js';
 import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity.js';
 import { STANDARD_DAEMON_KEY_NAMES, startDaemonBackground, stopAllDaemons } from './vetkey.js';
-import { isDaemonAlive } from './daemon.js';
+import { isDaemonAlive, runtimeDir, sanitizeDerivationId } from './daemon.js';
 import * as log from './log.js';
 
 /** ESM equivalent of __dirname */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DAEMON_START_LOCK_TTL_MS = 30_000;
 
 /** Supported modules and their corresponding script files (compiled in dist/ directory) */
 const MODULES: Record<string, string> = {
@@ -59,6 +60,38 @@ const MODULES: Record<string, string> = {
   social: 'social',
   zmail: 'zmail',
 };
+
+function daemonStartLockPath(derivationId: string): string {
+  return path.join(runtimeDir(), `${sanitizeDerivationId(derivationId)}.starting.lock`);
+}
+
+function tryAcquireDaemonStartLock(derivationId: string): boolean {
+  const lockPath = daemonStartLockPath(derivationId);
+
+  try {
+    fs.mkdirSync(runtimeDir(), { recursive: true });
+  } catch {
+    return false;
+  }
+
+  try {
+    const stat = fs.statSync(lockPath);
+    const ageMs = Date.now() - stat.mtimeMs;
+    if (ageMs < DAEMON_START_LOCK_TTL_MS) {
+      return false;
+    }
+    fs.unlinkSync(lockPath);
+  } catch {
+    // No existing lock (or unreadable lock) — continue and try to create one.
+  }
+
+  try {
+    fs.writeFileSync(lockPath, String(Date.now()), { flag: 'wx' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function showHelp(): void {
   console.log('zCloak.ai Agent CLI');
@@ -199,6 +232,13 @@ async function main(): Promise<void> {
     for (const keyName of STANDARD_DAEMON_KEY_NAMES) {
       const derivationId = `${principal}:${keyName}`;
       if (isDaemonAlive(derivationId)) continue;
+      if (!tryAcquireDaemonStartLock(derivationId)) {
+        log.debug('Daemon warm-up skipped because start lock is already held', {
+          derivationId,
+          lockPath: daemonStartLockPath(derivationId),
+        });
+        continue;
+      }
 
       try {
         startDaemonBackground(pemPath, keyName);
