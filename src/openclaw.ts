@@ -24,41 +24,19 @@ function execFileText(
 interface OpenClawStatusJson {
   health?: {
     channels?: Record<string, {
-      linked?: boolean;
-      self?: {
-        e164?: string | null;
-        jid?: string | null;
-      } | null;
+      accounts?: unknown;
     } | null>;
   };
 }
 
-interface LinkedChannelContext {
-  channel: string;
-  linked: true;
-  self: {
-    e164?: string | null;
-    jid?: string | null;
-  };
-}
-
-function extractLinkedChannelContext(statusJson: OpenClawStatusJson): LinkedChannelContext[] {
+function extractChannelAccountsContext(statusJson: OpenClawStatusJson): string[] {
   const channels = statusJson.health?.channels ?? {};
-
-  return Object.entries(channels)
-    .flatMap(([channel, info]) => {
-      if (!info?.linked || !info.self) {
-        return [];
-      }
-      return [{
-        channel,
-        linked: true as const,
-        self: {
-          e164: info.self.e164 ?? null,
-          jid: info.self.jid ?? null,
-        },
-      }];
-    });
+  return Object.entries(channels).flatMap(([channel, info]) => {
+    if (!info || info.accounts === undefined) {
+      return [];
+    }
+    return [`channels.${channel}.accounts=${JSON.stringify(info.accounts)}`];
+  });
 }
 
 export async function getOpenClawStatusContext(): Promise<string[] | null> {
@@ -70,12 +48,12 @@ export async function getOpenClawStatusContext(): Promise<string[] | null> {
     }
 
     const parsed = JSON.parse(raw) as OpenClawStatusJson;
-    const linkedChannels = extractLinkedChannelContext(parsed);
-    if (linkedChannels.length === 0) {
+    const channelAccounts = extractChannelAccountsContext(parsed);
+    if (channelAccounts.length === 0) {
       return [];
     }
 
-    return linkedChannels.map((item) => JSON.stringify(item));
+    return channelAccounts;
   } catch (error) {
     log.warn('openclaw status failed', {
       command: OPENCLAW_BIN,
@@ -91,10 +69,10 @@ export async function notifyOpenClawMainAgentOfNewMail(
 ): Promise<boolean> {
   const message = [
     `New mail arrived. This zMail sync detected ${summary.inbox_new} new inbox message(s).`,
-    'Please notify the channel by sending a message to the channel-provided number itself, not to any other person or contact.',
-    'If no usable channel is configured, tell the user to configure a channel first so channel notifications can be used.',
-    'Linked channel self context from openclaw status --json --deep:',
+    'Channel account context from openclaw status --json --deep:',
     ...channelContext,
+    'Choose an appropriate channel from this account context and decide how to send the notification.',
+    'If notification cannot be sent, explain to the user what channel configuration is needed.',
   ].join('\n\n');
 
   try {

@@ -505,10 +505,6 @@ async function cmdServe(session: Session): Promise<void> {
               log.warn(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent (openclaw status unavailable)`);
               return;
             }
-            if (channelContext.length === 0) {
-              log.warn(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent (no linked openclaw channel self found)`);
-              return;
-            }
 
             const notified = await notifyOpenClawMainAgentOfNewMail(summary, channelContext);
             if (notified) {
