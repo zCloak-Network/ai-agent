@@ -37,7 +37,7 @@ import { fileURLToPath } from 'url';
 import { Session } from './session.js';
 import { preCheck } from './pre-check.js';
 import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity.js';
-import { STANDARD_DAEMON_KEY_NAMES, startDaemonBackground, stopAllDaemons } from './vetkey.js';
+import { startDaemonBackground, stopAllDaemons } from './vetkey.js';
 import { isDaemonAlive, runtimeDir, sanitizeDerivationId } from './daemon.js';
 import * as log from './log.js';
 
@@ -228,23 +228,20 @@ async function main(): Promise<void> {
       return; // Identity load failed — skip warm-up
     }
 
-    // Step 5: Check each standard daemon, start if not running
-    for (const keyName of STANDARD_DAEMON_KEY_NAMES) {
-      const derivationId = `${principal}:${keyName}`;
-      if (isDaemonAlive(derivationId)) continue;
-      if (!tryAcquireDaemonStartLock(derivationId)) {
-        log.debug('Daemon warm-up skipped because start lock is already held', {
-          derivationId,
-          lockPath: daemonStartLockPath(derivationId),
-        });
-        continue;
-      }
+    // Step 5: Start the per-principal daemon if needed
+    if (isDaemonAlive(principal)) return;
+    if (!tryAcquireDaemonStartLock(principal)) {
+      log.debug('Daemon warm-up skipped because start lock is already held', {
+        principal,
+        lockPath: daemonStartLockPath(principal),
+      });
+      return;
+    }
 
-      try {
-        startDaemonBackground(pemPath, keyName);
-      } catch {
-        // Best-effort — ignore spawn failures
-      }
+    try {
+      startDaemonBackground(pemPath, principal);
+    } catch {
+      // Best-effort — ignore spawn failures
     }
   })();
 

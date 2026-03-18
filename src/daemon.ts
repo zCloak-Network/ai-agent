@@ -38,14 +38,14 @@ const MAX_SOCKET_PATH_LEN = 100;
 // ============================================================================
 
 /**
- * Sanitize a derivation ID for use in file names.
+ * Sanitize a daemon identifier for use in file names.
  *
  * Replaces special characters (:, /, \) with underscores.
  * If the resulting path would exceed the Unix socket path limit,
  * falls back to a SHA-256 hash prefix (16 hex characters) to keep
  * the path short enough.
  *
- * @param derivationId - Raw derivation ID (e.g. "abc-def:default")
+ * @param derivationId - Raw daemon ID (for example a principal or "{principal}:{key_name}")
  * @returns Safe file name prefix
  */
 export function sanitizeDerivationId(derivationId: string): string {
@@ -66,13 +66,13 @@ export function sanitizeDerivationId(derivationId: string): string {
   return sanitized;
 }
 
-/** Get the socket file path for a derivation ID */
+/** Get the socket file path for a daemon ID */
 export function socketPath(derivationId: string): string {
   const name = sanitizeDerivationId(derivationId);
   return join(_runtimeDir(), `${name}.sock`);
 }
 
-/** Get the PID file path for a derivation ID */
+/** Get the PID file path for a daemon ID */
 export function pidPath(derivationId: string): string {
   const name = sanitizeDerivationId(derivationId);
   return join(_runtimeDir(), `${name}.pid`);
@@ -107,7 +107,7 @@ function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * Check whether a daemon for the given derivation ID is alive.
+ * Check whether a daemon for the given daemon ID is alive.
  *
  * Returns a simple boolean — suitable for pre-checks where the caller wants to
  * decide whether to auto-start a daemon without catching exceptions.
@@ -122,7 +122,7 @@ function isProcessAlive(pid: number): boolean {
  * If stale PID/socket files are found (process confirmed dead), they are
  * cleaned up.
  *
- * @param derivationId - Full derivation ID (e.g. "{principal}:Mail")
+ * @param derivationId - Daemon ID (for example "{principal}:Mail" or just "{principal}")
  * @returns true if the daemon is (or may be) running and connectable
  */
 export function isDaemonAlive(derivationId: string): boolean {
@@ -195,7 +195,7 @@ export class DaemonRuntime {
   /**
    * Create a new DaemonRuntime, performing all startup checks.
    *
-   * @param derivationId - Derivation ID for this daemon instance
+   * @param derivationId - Daemon ID for this daemon instance
    * @returns Initialized DaemonRuntime
    * @throws ToolError with code DAEMON if another instance is already running
    */
@@ -216,7 +216,9 @@ export class DaemonRuntime {
         const existingPid = parseInt(pidStr, 10);
 
         if (!isNaN(existingPid) && isProcessAlive(existingPid)) {
-          log.info(`Already running daemon detected for derivation ID "${derivationId}" (PID ${existingPid})`);
+          throw daemonError(
+            `daemon already running for "${derivationId}" (PID ${existingPid})`,
+          );
         }
       } catch (e) {
         // Re-throw ToolError (daemon already running)

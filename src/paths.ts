@@ -7,9 +7,9 @@
  * Directory layout:
  *   ~/.config/zcloak/
  *     ai-id.pem                  Identity PEM file
- *     debug.log                  Debug log file
  *     .last-update-check         Update check timestamp
  *     run/                       Daemon runtime files (PID, socket, logs)
+ *       debug.log                Shared debug log file
  *       {sanitized_id}.pid
  *       {sanitized_id}.sock
  *       {keyname}-daemon.log
@@ -54,9 +54,9 @@ export function defaultPemPath(): string {
 // Logging
 // ============================================================================
 
-/** Debug log file path: ~/.config/zcloak/debug.log */
+/** Debug log file path: ~/.config/zcloak/run/debug.log */
 export function debugLogPath(): string {
-  return join(configDir(), 'debug.log');
+  return join(runtimeDir(), 'debug.log');
 }
 
 /** Daemon log file path for a given key name: ~/.config/zcloak/run/{keyname}-daemon.log */

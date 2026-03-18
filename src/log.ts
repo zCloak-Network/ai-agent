@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { configDir, debugLogPath } from './paths.js';
+import { debugLogPath, runtimeDir } from './paths.js';
 
 function isDebugEnabled(): boolean {
   const value = process.env.ZCLOAK_DEBUG?.trim().toLowerCase();
@@ -29,7 +29,7 @@ function write(level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR', parts: unknown[]): vo
   process.stderr.write(entry);
 
   try {
-    fs.mkdirSync(configDir(), { recursive: true });
+    fs.mkdirSync(runtimeDir(), { recursive: true });
     fs.appendFileSync(debugLogPath(), entry, 'utf-8');
   } catch {
     // Logging must never break the main command path.

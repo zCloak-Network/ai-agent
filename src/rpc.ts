@@ -10,7 +10,7 @@
  *   encrypt      — Encrypt file or inline data using the held AES-256 key
  *   decrypt      — Decrypt file or inline data using the held AES-256 key
  *   ibe-decrypt  — Decrypt IBE ciphertext using cached VetKey (Mail daemon mode)
- *   status       — Query daemon status (derivation_id, principal, uptime)
+ *   status       — Query daemon status (active key, principal, uptime)
  *   quit         — Close current client connection
  *   shutdown     — Stop the entire daemon gracefully
  */
@@ -120,10 +120,12 @@ export interface DecryptResult {
 export interface StatusResult {
   /** Daemon status (always "running" while daemon is alive) */
   status: "running";
-  /** Derivation ID used for this session's key (e.g. "{principal}:default") */
+  /** Active derivation ID used for encrypt/decrypt requests */
   derivation_id: string;
   /** Authenticated principal text */
   principal: string;
+  /** Key names currently loaded in memory */
+  loaded_key_names: string[];
   /** Daemon start timestamp (ISO 8601) */
   started_at: string;
   /** Unix socket path */

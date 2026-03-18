@@ -60,16 +60,23 @@ interface HandleResult {
  */
 function handleRequest(
   req: RpcRequest,
-  keyStore: KeyStore,
+  activeKeyStore: KeyStore,
+  mailKeyStore: KeyStore | null,
   principal: string,
   startedAt: string,
   sockPath: string,
 ): HandleResult {
   const { id, method } = req;
+  const effectiveMailKeyStore = mailKeyStore ?? activeKeyStore;
+  const loadedKeyNames = [activeKeyStore, effectiveMailKeyStore]
+    .filter((store, index, stores): store is KeyStore =>
+      store !== null && stores.findIndex(candidate => candidate?.derivationId === store.derivationId) === index,
+    )
+    .map(store => store.derivationId.split(':').slice(1).join(':') || 'default');
 
   switch (method) {
     case "encrypt": {
-      const result = handleEncrypt(req.params as EncryptParams | undefined, keyStore);
+      const result = handleEncrypt(req.params as EncryptParams | undefined, activeKeyStore);
       if ("error" in result) {
         return { response: errorResponse(id, result.error), action: "continue" };
       }
@@ -77,7 +84,7 @@ function handleRequest(
     }
 
     case "decrypt": {
-      const result = handleDecrypt(req.params as DecryptParams | undefined, keyStore);
+      const result = handleDecrypt(req.params as DecryptParams | undefined, activeKeyStore);
       if ("error" in result) {
         return { response: errorResponse(id, result.error), action: "continue" };
       }
@@ -85,7 +92,7 @@ function handleRequest(
     }
 
     case "ibe-decrypt": {
-      const result = handleIbeDecrypt(req.params as IbeDecryptParams | undefined, keyStore);
+      const result = handleIbeDecrypt(req.params as IbeDecryptParams | undefined, effectiveMailKeyStore);
       if ("error" in result) {
         return { response: errorResponse(id, result.error), action: "continue" };
       }
@@ -95,8 +102,9 @@ function handleRequest(
     case "status": {
       const status: StatusResult = {
         status: "running",
-        derivation_id: keyStore.derivationId,
+        derivation_id: activeKeyStore.derivationId,
         principal,
+        loaded_key_names: loadedKeyNames,
         started_at: startedAt,
         socket_path: sockPath,
       };
@@ -400,18 +408,20 @@ function readFileChecked(filePath: string): Buffer | { error: string } {
  *   4. Accept connections, handle requests concurrently
  *   5. On shutdown signal: stop accepting, close connections, cleanup
  *
- * @param keyStore - AES-256 key holder
+ * @param activeKeyStore - AES-256 key holder used for encrypt/decrypt
+ * @param mailKeyStore - Optional Mail key holder used for ibe-decrypt
  * @param principal - Authenticated principal text
- * @param derivationId - Derivation ID used for the key
+ * @param daemonId - Daemon runtime identifier (one socket/PID pair)
  */
 export function runDaemonUds(
-  keyStore: KeyStore,
+  activeKeyStore: KeyStore,
+  mailKeyStore: KeyStore | null,
   principal: string,
-  derivationId: string,
+  daemonId: string,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     // Step 1: Create daemon runtime (PID file, socket setup)
-    const runtime = DaemonRuntime.create(derivationId);
+    const runtime = DaemonRuntime.create(daemonId);
     const startedAt = new Date().toISOString();
     const sockPath = runtime.socketFilePath;
 
@@ -443,7 +453,8 @@ export function runDaemonUds(
         // Handle the request
         const { response, action } = handleRequest(
           parsed,
-          keyStore,
+          activeKeyStore,
+          mailKeyStore,
           principal,
           startedAt,
           sockPath,
@@ -474,7 +485,10 @@ export function runDaemonUds(
     server.listen(sockPath, () => {
       // Emit ready info to stderr
       log.info(`Daemon ready. Socket: ${sockPath}`);
-      log.info(`Derivation ID: ${derivationId}`);
+      log.info(`Active derivation ID: ${activeKeyStore.derivationId}`);
+      if (mailKeyStore && mailKeyStore.derivationId !== activeKeyStore.derivationId) {
+        log.info(`Mail derivation ID: ${mailKeyStore.derivationId}`);
+      }
       log.info(`Principal: ${principal}`);
     });
 
@@ -555,7 +569,13 @@ export function runDaemonUds(
       process.removeListener("unhandledRejection", onUnhandledRejection);
 
       // Cleanup: destroy key, remove files
-      keyStore.destroy();
+      const uniqueKeyStores = [activeKeyStore, mailKeyStore]
+        .filter((store, index, stores): store is KeyStore =>
+          store !== null && stores.findIndex(candidate => candidate?.derivationId === store.derivationId) === index,
+        );
+      for (const store of uniqueKeyStores) {
+        store.destroy();
+      }
       runtime.destroy();
 
       log.info("Daemon stopped. Key has been zeroized.");

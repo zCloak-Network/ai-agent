@@ -40,7 +40,7 @@ import type { Session } from './session.js';
 import * as cryptoOps from './crypto.js';
 import { KeyStore } from './key-store.js';
 import { runDaemonUds } from './serve.js';
-import { isDaemonAlive, socketPath, runtimeDir } from './daemon.js';
+import { isDaemonAlive, socketPath, runtimeDir, sanitizeDerivationId } from './daemon.js';
 import { canisterCallError } from './error.js';
 import * as log from './log.js';
 import { generalParseAiIdToRecord, isReadableId } from './aiid.js';
@@ -461,6 +461,7 @@ async function cmdServe(session: Session): Promise<void> {
 
   const actor = await session.getSignActor();
   const principal = session.getPrincipal();
+  const daemonId = principal;
 
   // Construct derivation ID
   const derivationId = `${principal}:${keyName}`;
@@ -470,10 +471,17 @@ async function cmdServe(session: Session): Promise<void> {
 
   // Derive AES-256 key from VetKey via the sign actor
   log.info(`Deriving AES-256 key from VetKey (derivation_id: ${derivationId})...`);
-  const keyStore = await KeyStore.deriveFromActor(actor, derivationId);
-  log.info("Key derived successfully. Starting JSON-RPC daemon...");
+  const activeKeyStore = await KeyStore.deriveFromActor(actor, derivationId);
 
-  await runDaemonUds(keyStore, principal, derivationId);
+  let mailKeyStore: KeyStore | null = null;
+  const mailDerivationId = `${principal}:Mail`;
+  if (mailDerivationId !== derivationId) {
+    log.info(`Deriving Mail key from VetKey (derivation_id: ${mailDerivationId})...`);
+    mailKeyStore = await KeyStore.deriveFromActor(actor, mailDerivationId);
+  }
+  log.info("Key derivation complete. Starting JSON-RPC daemon...");
+
+  await runDaemonUds(activeKeyStore, mailKeyStore, principal, daemonId);
 }
 
 /**
@@ -486,22 +494,22 @@ async function cmdStop(session: Session): Promise<void> {
   const jsonOutput = !!args['json'];
 
   const principal = session.getPrincipal();
-  const derivationId = `${principal}:${keyName}`;
-  const sockPath = socketPath(derivationId);
+  const daemonId = principal;
+  const sockPath = socketPath(daemonId);
 
   // Try to stop via socket if:
   //   1. isDaemonAlive() says yes (PID + socket both present), OR
   //   2. PID file is missing/corrupt but socket file still exists — the daemon
   //      process may be alive with an orphaned socket. Attempt a shutdown via
   //      the socket so we don't leave an unmanageable orphan process.
-  const alive = isDaemonAlive(derivationId);
+  const alive = isDaemonAlive(daemonId);
   const socketExists = existsSync(sockPath);
 
   if (!alive && !socketExists) {
     if (jsonOutput) {
       console.log(JSON.stringify({ status: "not_running", key_name: keyName }));
     } else {
-      console.log(`Daemon '${keyName}' is not running. Nothing to stop.`);
+      console.log("Daemon is not running. Nothing to stop.");
     }
     return;
   }
@@ -524,7 +532,7 @@ async function cmdStop(session: Session): Promise<void> {
       if (jsonOutput) {
         console.log(JSON.stringify({ status: "not_running", key_name: keyName, note: "cleaned up stale socket" }));
       } else {
-        console.log(`Daemon '${keyName}' is not running (cleaned up stale socket).`);
+        console.log("Daemon is not running (cleaned up stale socket).");
       }
     } else {
       throw e;
@@ -538,21 +546,20 @@ async function cmdStop(session: Session): Promise<void> {
 async function cmdStatus(session: Session): Promise<void> {
   const args = session.args;
   if (args['key-name'] === true) throw new Error("--key-name requires a value (e.g. --key-name=mykey)");
-  const keyName = (args['key-name'] as string) || 'default';
   const jsonOutput = !!args['json'];
   const principal = session.getPrincipal();
-  const derivationId = `${principal}:${keyName}`;
+  const daemonId = principal;
 
-  if (!isDaemonAlive(derivationId)) {
+  if (!isDaemonAlive(daemonId)) {
     if (jsonOutput) {
-      console.log(JSON.stringify({ status: "not_running", key_name: keyName }));
+      console.log(JSON.stringify({ status: "not_running" }));
     } else {
-      console.log(`Daemon '${keyName}' is not running. Use 'zcloak-ai vetkey serve --key-name=${keyName}' to start it.`);
+      console.log("Daemon is not running. Use 'zcloak-ai vetkey serve' to start it.");
     }
     return;
   }
 
-  const sockPath = socketPath(derivationId);
+  const sockPath = socketPath(daemonId);
 
   // Connect to socket and send status
   const response = await sendRpcToSocket(sockPath, {
@@ -569,6 +576,9 @@ async function cmdStatus(session: Session): Promise<void> {
       console.log(`  Status:        ${result.status}`);
       console.log(`  Derivation ID: ${result.derivation_id}`);
       console.log(`  Principal:     ${result.principal}`);
+      if (Array.isArray(result.loaded_key_names)) {
+        console.log(`  Loaded Keys:   ${(result.loaded_key_names as unknown[]).join(', ')}`);
+      }
       console.log(`  Started At:    ${result.started_at}`);
       console.log(`  Socket:        ${result.socket_path}`);
     } else if (response.error) {
@@ -581,7 +591,7 @@ async function cmdStatus(session: Session): Promise<void> {
 // Daemon Auto-Start
 // ============================================================================
 
-/** Key names for the two standard daemons that should always be kept alive */
+/** Key names preloaded in the unified per-principal daemon */
 export const STANDARD_DAEMON_KEY_NAMES = ['default', 'Mail'] as const;
 
 /**
@@ -613,17 +623,18 @@ export async function stopAllDaemons(): Promise<void> {
 }
 
 /**
- * Spawn a daemon process in the background for the given key name.
+ * Spawn the per-principal daemon process in the background.
  *
  * The child process is fully detached (survives parent exit) with stderr
  * redirected to a log file under ~/.config/zcloak/run/.
+ * The daemon preloads the active AES key and the Mail key in one process.
  *
  * @param pemPath - Path to the identity PEM file
- * @param keyName - Daemon key name (e.g. "default", "Mail")
+ * @param principal - Principal that owns the daemon runtime files
  * @returns The child process PID (or undefined if spawn failed)
  */
-export function startDaemonBackground(pemPath: string, keyName: string): number | undefined {
-  const logPath = daemonLogPath(keyName);
+export function startDaemonBackground(pemPath: string, principal: string): number | undefined {
+  const logPath = daemonLogPath(`daemon-${sanitizeDerivationId(principal)}`);
   const logDir = dirname(logPath);
 
   try {
@@ -646,7 +657,7 @@ export function startDaemonBackground(pemPath: string, keyName: string): number 
     // direct `node dist/cli.js`), avoiding ENOENT when 'zcloak-ai' is not on PATH.
     const child = spawn(process.execPath, [
       CLI_ENTRY_SCRIPT,
-      'vetkey', 'serve', `--key-name=${keyName}`, `--identity=${pemPath}`,
+      'vetkey', 'serve', `--identity=${pemPath}`,
     ], {
       detached: true,
       stdio: ['ignore', 'ignore', logFd],
@@ -1430,13 +1441,13 @@ async function cmdRecvMsg(session: Session): Promise<void> {
   }
 
   const mailDerivationId = `${principal}:Mail`;
-  if (!isDaemonAlive(mailDerivationId)) {
+  if (!isDaemonAlive(principal)) {
     throw new Error(
-      "Mail daemon is not running. Start it first with 'zcloak-ai vetkey serve --key-name=Mail'.",
+      "Mail daemon is not running. Start it first with 'zcloak-ai vetkey serve'.",
     );
   }
 
-  const sockPath = socketPath(mailDerivationId);
+  const sockPath = socketPath(principal);
   const response = await sendRpcToSocket(sockPath, {
     id: 1,
     method: 'ibe-decrypt',

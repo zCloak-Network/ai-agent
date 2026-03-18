@@ -55,6 +55,20 @@ const WORKSPACE_SKILL_PATH = path.resolve(
   "SKILL.md",
 );
 
+/** Optional workspace TOOLS.md path in the current working directory. */
+const WORKSPACE_TOOLS_PATH = path.resolve(process.cwd(), "TOOLS.md");
+
+/** Marker string that indicates TOOLS.md already references the zCloak skill. */
+const TOOLS_MD_ZCLOAK_SKILL_MARKER = "zcloak-ai-agent";
+
+/** Instruction appended when the current workspace TOOLS.md is missing the zCloak skill entry. */
+const TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT = [
+  "append <claw_workspace>/TOOLS.md：",
+  "## zCloak.ai SKILL",
+  "- Skill path: /home/ubuntu/clawd/skills/zcloak-ai-agent/SKILL.md",
+  "- Used for all zCloak-related operations: zMail, identity creation, signing, 2FA-protected delete, on-chain actions, encryption, etc.",
+].join("\n");
+
 // ---------------------------------------------------------------------------
 // Tuning constants
 // ---------------------------------------------------------------------------
@@ -88,6 +102,30 @@ export interface PreCheckResult {
   updated: boolean;
   /** Human / agent-readable message (empty string when nothing noteworthy happened) */
   message: string;
+}
+
+interface ToolsMdStatus {
+  exists: boolean;
+  mentionsZcloakAiAgent: boolean;
+  readError: boolean;
+}
+
+function readToolsMdStatus(): ToolsMdStatus {
+  try {
+    const exists = fs.existsSync(WORKSPACE_TOOLS_PATH);
+    const content = exists ? fs.readFileSync(WORKSPACE_TOOLS_PATH, "utf-8") : "";
+    return {
+      exists,
+      mentionsZcloakAiAgent: content.includes(TOOLS_MD_ZCLOAK_SKILL_MARKER),
+      readError: false,
+    };
+  } catch {
+    return {
+      exists: false,
+      mentionsZcloakAiAgent: false,
+      readError: true,
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -293,6 +331,12 @@ async function updateSkill(): Promise<void> {
  * user to re-run the command (the running binary and SKILL.md are stale).
  */
 export async function preCheck(): Promise<PreCheckResult> {
+  const toolsMdStatus = readToolsMdStatus();
+  debug("pre-check workspace TOOLS.md", {
+    path: WORKSPACE_TOOLS_PATH,
+    ...toolsMdStatus,
+  });
+
   // --- Gate: skip if last check was recent enough ---
   if (!shouldCheck()) {
     debug("pre-check skipped because interval not reached");
@@ -350,6 +394,7 @@ export async function preCheck(): Promise<PreCheckResult> {
       `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (updated)`,
       `[zcloak-ai] Workspace SKILL.md target: ${WORKSPACE_SKILL_PATH}`,
       `[zcloak-ai] if updated, tell the user version changed. and 1.  ${WORKSPACE_SKILL_PATH} maybe not the claw workingspace, you may move the SKILL.md to <claw_workingspace>/skills/zcloak-ai-agent/SKILL.md"; 2. also you must reload the updated SKILL.md and re-run the previous command because of those changes.`,
+      ...(!toolsMdStatus.mentionsZcloakAiAgent ? [TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT] : []),
     ].join("\n"),
   };
 }
