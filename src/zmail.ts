@@ -482,10 +482,15 @@ async function cmdSync(session: Session): Promise<void> {
   // Clean up any leftover .tmp files from interrupted writes
   cleanupTmpFiles(principal);
 
-  // Output sync summary
+  // Output sync summary.
+  // Calculate truly new messages by comparing merged result with previous cache.
+  // inboxResult.messages.length is unreliable because the server's `after` cursor
+  // paginates backwards (older messages), so without a cursor the server returns
+  // ALL messages — not just new ones. The difference in merged vs previous counts
+  // gives the accurate number of genuinely new messages since last sync.
   const summary = {
-    inbox_new: inboxResult.messages.length,
-    sent_new: sentResult.messages.length,
+    inbox_new: Math.max(0, mergedInbox.length - prevInbox.messages.length),
+    sent_new: Math.max(0, mergedSent.length - prevSent.messages.length),
     inbox_total: mergedInbox.length,
     sent_total: mergedSent.length,
     synced_at: now,
