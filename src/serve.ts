@@ -18,6 +18,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { KeyStore } from './key-store.js';
 import { DaemonRuntime } from './daemon.js';
+import type { PeriodicTaskHandle } from './daemon-tasks.js';
 import {
   type RpcRequest,
   type RpcResponse,
@@ -40,6 +41,8 @@ const MAX_DATA_SIZE = 1024 * 1024 * 1024;
 
 /** Maximum IBE ciphertext size for ibe-decrypt (64 KB payload + IBE overhead) */
 const MAX_IBE_DATA_SIZE = 64 * 1024 + 256;
+
+export type DaemonTaskFactory = () => PeriodicTaskHandle;
 
 // ============================================================================
 // Shared Request Handling
@@ -418,12 +421,14 @@ export function runDaemonUds(
   mailKeyStore: KeyStore | null,
   principal: string,
   daemonId: string,
+  taskFactories: DaemonTaskFactory[] = [],
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     // Step 1: Create daemon runtime (PID file, socket setup)
     const runtime = DaemonRuntime.create(daemonId);
     const startedAt = new Date().toISOString();
     const sockPath = runtime.socketFilePath;
+    const backgroundTasks: PeriodicTaskHandle[] = [];
 
     // Track active connections for graceful shutdown
     const activeConnections = new Set<Socket>();
@@ -490,9 +495,21 @@ export function runDaemonUds(
         log.info(`Mail derivation ID: ${mailKeyStore.derivationId}`);
       }
       log.info(`Principal: ${principal}`);
+      for (const createTask of taskFactories) {
+        try {
+          backgroundTasks.push(createTask());
+        } catch (error) {
+          log.warn('Failed to start daemon background task', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
     });
 
     server.on("error", (err) => {
+      for (const task of backgroundTasks) {
+        task.stop();
+      }
       runtime.destroy();
       reject(err);
     });
@@ -567,6 +584,9 @@ export function runDaemonUds(
       process.removeListener("SIGHUP", onSighup);
       process.removeListener("uncaughtException", onUncaughtException);
       process.removeListener("unhandledRejection", onUnhandledRejection);
+      for (const task of backgroundTasks) {
+        task.stop();
+      }
 
       // Cleanup: destroy key, remove files
       const uniqueKeyStores = [activeKeyStore, mailKeyStore]

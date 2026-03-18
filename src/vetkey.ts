@@ -41,6 +41,7 @@ import * as cryptoOps from './crypto.js';
 import { KeyStore } from './key-store.js';
 import { runDaemonUds } from './serve.js';
 import { isDaemonAlive, socketPath, runtimeDir, sanitizeDerivationId } from './daemon.js';
+import { startPeriodicAsyncTask } from './daemon-tasks.js';
 import { canisterCallError } from './error.js';
 import * as log from './log.js';
 import { generalParseAiIdToRecord, isReadableId } from './aiid.js';
@@ -53,6 +54,7 @@ import { generalParseAiIdToRecord, isReadableId } from './aiid.js';
  * npx, node dist/cli.js, etc.).
  */
 const CLI_ENTRY_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'cli.js');
+const ZMAIL_SYNC_TASK_INTERVAL_MS = 2 * 60 * 1000;
 
 // ============================================================================
 // Module Entry Point
@@ -480,8 +482,28 @@ async function cmdServe(session: Session): Promise<void> {
     mailKeyStore = await KeyStore.deriveFromActor(actor, mailDerivationId);
   }
   log.info("Key derivation complete. Starting JSON-RPC daemon...");
+  const { syncMailbox } = await import('./zmail.js');
 
-  await runDaemonUds(activeKeyStore, mailKeyStore, principal, daemonId);
+  await runDaemonUds(
+    activeKeyStore,
+    mailKeyStore,
+    principal,
+    daemonId,
+    [
+      () => startPeriodicAsyncTask({
+        name: 'zmail-sync',
+        intervalMs: ZMAIL_SYNC_TASK_INTERVAL_MS,
+        task: async () => {
+          const summary = await syncMailbox(session, { fullSync: false, logProgress: false });
+          if (summary.inbox_new > 0 || summary.sent_new > 0) {
+            log.info(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent`);
+            return;
+          }
+          log.debug('Daemon zMail sync complete', summary);
+        },
+      }),
+    ],
+  );
 }
 
 /**

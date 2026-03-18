@@ -421,6 +421,77 @@ async function fetchAllPages(
   return { messages: allMessages, cursor: lastValidCursor };
 }
 
+export interface SyncMailboxOptions {
+  fullSync?: boolean;
+  logProgress?: boolean;
+}
+
+export interface SyncMailboxResult {
+  inbox_new: number;
+  sent_new: number;
+  inbox_total: number;
+  sent_total: number;
+  synced_at: number;
+}
+
+export async function syncMailbox(
+  session: Session,
+  options: SyncMailboxOptions = {},
+): Promise<SyncMailboxResult> {
+  const zmailUrl = resolveZmailUrl(session);
+  const principal = session.getPrincipal();
+  const fullSync = options.fullSync === true;
+  const logProgress = options.logProgress !== false;
+
+  const prevState = fullSync ? null : readSyncState(principal);
+  const prevInbox = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readInbox(principal);
+  const prevSent = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readSent(principal);
+
+  if (logProgress) {
+    log.info(`Syncing zMail for ${principal}...`);
+    if (prevState && !fullSync) {
+      log.info(`  Incremental sync from cursor (last synced: ${new Date(prevState.last_sync_at * 1000).toISOString()})`);
+    } else {
+      log.info('  Full sync (no previous state or --full flag)');
+    }
+  }
+
+  const inboxResult = await fetchAllPages(
+    session, zmailUrl,
+    `/v1/inbox/${principal}`,
+    prevState?.inbox_cursor,
+  );
+
+  const sentResult = await fetchAllPages(
+    session, zmailUrl,
+    `/v1/sent/${principal}`,
+    prevState?.sent_cursor,
+  );
+
+  const mergedInbox = mergeMessages(prevInbox.messages, inboxResult.messages);
+  const mergedSent = mergeMessages(prevSent.messages, sentResult.messages);
+  const now = Math.floor(Date.now() / 1000);
+
+  writeInbox(principal, { version: 1, synced_at: now, messages: mergedInbox });
+  writeSent(principal, { version: 1, synced_at: now, messages: mergedSent });
+  writeSyncState(principal, {
+    version: 1,
+    inbox_cursor: inboxResult.cursor,
+    sent_cursor: sentResult.cursor,
+    last_sync_at: now,
+  });
+
+  cleanupTmpFiles(principal);
+
+  return {
+    inbox_new: Math.max(0, mergedInbox.length - prevInbox.messages.length),
+    sent_new: Math.max(0, mergedSent.length - prevSent.messages.length),
+    inbox_total: mergedInbox.length,
+    sent_total: mergedSent.length,
+    synced_at: now,
+  };
+}
+
 /**
  * Sync messages from the zMail server to local cache.
  *
@@ -432,69 +503,9 @@ async function fetchAllPages(
  *   --json    Output sync summary as JSON
  */
 async function cmdSync(session: Session): Promise<void> {
-  const zmailUrl = resolveZmailUrl(session);
-  const principal = session.getPrincipal();
   const fullSync = session.args['full'] === true;
   const jsonOutput = session.args['json'] === true;
-
-  // Load existing state (cursors from last sync).
-  // In full mode, skip previous state and cache — the result replaces everything.
-  const prevState = fullSync ? null : readSyncState(principal);
-  const prevInbox = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readInbox(principal);
-  const prevSent = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readSent(principal);
-
-  log.info(`Syncing zMail for ${principal}...`);
-  if (prevState && !fullSync) {
-    log.info(`  Incremental sync from cursor (last synced: ${new Date(prevState.last_sync_at * 1000).toISOString()})`);
-  } else {
-    log.info('  Full sync (no previous state or --full flag)');
-  }
-
-  // Fetch inbox pages
-  const inboxResult = await fetchAllPages(
-    session, zmailUrl,
-    `/v1/inbox/${principal}`,
-    prevState?.inbox_cursor,
-  );
-
-  // Fetch sent pages
-  const sentResult = await fetchAllPages(
-    session, zmailUrl,
-    `/v1/sent/${principal}`,
-    prevState?.sent_cursor,
-  );
-
-  // Merge newly fetched messages with existing cache
-  const mergedInbox = mergeMessages(prevInbox.messages, inboxResult.messages);
-  const mergedSent = mergeMessages(prevSent.messages, sentResult.messages);
-  const now = Math.floor(Date.now() / 1000);
-
-  // Write updated cache files atomically
-  writeInbox(principal, { version: 1, synced_at: now, messages: mergedInbox });
-  writeSent(principal, { version: 1, synced_at: now, messages: mergedSent });
-  writeSyncState(principal, {
-    version: 1,
-    inbox_cursor: inboxResult.cursor,
-    sent_cursor: sentResult.cursor,
-    last_sync_at: now,
-  });
-
-  // Clean up any leftover .tmp files from interrupted writes
-  cleanupTmpFiles(principal);
-
-  // Output sync summary.
-  // Calculate truly new messages by comparing merged result with previous cache.
-  // inboxResult.messages.length is unreliable because the server's `after` cursor
-  // paginates backwards (older messages), so without a cursor the server returns
-  // ALL messages — not just new ones. The difference in merged vs previous counts
-  // gives the accurate number of genuinely new messages since last sync.
-  const summary = {
-    inbox_new: Math.max(0, mergedInbox.length - prevInbox.messages.length),
-    sent_new: Math.max(0, mergedSent.length - prevSent.messages.length),
-    inbox_total: mergedInbox.length,
-    sent_total: mergedSent.length,
-    synced_at: now,
-  };
+  const summary = await syncMailbox(session, { fullSync, logProgress: true });
 
   if (jsonOutput) {
     console.log(JSON.stringify(summary, null, 2));
