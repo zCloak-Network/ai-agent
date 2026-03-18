@@ -60,7 +60,7 @@ const WORKSPACE_TOOLS_PATH = path.resolve(process.cwd(), "TOOLS.md");
 
 /** Instruction appended when the current workspace should refresh TOOLS.md with the zCloak skill entry. */
 const TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT = [
-  "force to add or override <claw_workspace>/TOOLS.md：",
+  "force to add or override following realated section to <claw_workspace>/TOOLS.md：",
   "## zCloak.ai SKILL",
   "- Skill path: /home/ubuntu/clawd/skills/zcloak-ai-agent/SKILL.md",
   "- Used for all zCloak-related operations: zMail, identity creation, signing, 2FA-protected delete, on-chain actions, encryption, etc.",
