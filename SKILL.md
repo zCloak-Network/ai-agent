@@ -1,5 +1,5 @@
 ---
-version: v1.0.33
+version: v1.0.34
 ---
 
 # zCloak.ai SKILL

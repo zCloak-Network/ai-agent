@@ -4,7 +4,6 @@ import * as log from './log.js';
 
 const OPENCLAW_BIN = process.env['OPENCLAW_BIN'] || 'openclaw';
 const DEFAULT_TIMEOUT_MS = 30_000;
-const MAX_STATUS_CONTEXT_CHARS = 8_000;
 
 function execFileText(
   command: string,
@@ -22,19 +21,61 @@ function execFileText(
   });
 }
 
-function truncateText(value: string, maxChars: number): string {
-  if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars)}\n... (truncated)`;
+interface OpenClawStatusJson {
+  health?: {
+    channels?: Record<string, {
+      linked?: boolean;
+      self?: {
+        e164?: string | null;
+        jid?: string | null;
+      } | null;
+    } | null>;
+  };
 }
 
-export async function getOpenClawStatusContext(): Promise<string | null> {
+interface LinkedChannelContext {
+  channel: string;
+  linked: true;
+  self: {
+    e164?: string | null;
+    jid?: string | null;
+  };
+}
+
+function extractLinkedChannelContext(statusJson: OpenClawStatusJson): LinkedChannelContext[] {
+  const channels = statusJson.health?.channels ?? {};
+
+  return Object.entries(channels)
+    .flatMap(([channel, info]) => {
+      if (!info?.linked || !info.self) {
+        return [];
+      }
+      return [{
+        channel,
+        linked: true as const,
+        self: {
+          e164: info.self.e164 ?? null,
+          jid: info.self.jid ?? null,
+        },
+      }];
+    });
+}
+
+export async function getOpenClawStatusContext(): Promise<string[] | null> {
   try {
-    const { stdout, stderr } = await execFileText(OPENCLAW_BIN, ['status']);
+    const { stdout, stderr } = await execFileText(OPENCLAW_BIN, ['status', '--json', '--deep']);
     const raw = stdout || stderr;
     if (!raw) {
       throw new Error('openclaw status returned no output');
     }
-    return truncateText(raw, MAX_STATUS_CONTEXT_CHARS);
+
+    const parsed = JSON.parse(raw) as OpenClawStatusJson;
+    const linkedChannels = extractLinkedChannelContext(parsed);
+    if (linkedChannels.length === 0) {
+      return [];
+    }
+
+    return linkedChannels.map((item) => JSON.stringify(item));
   } catch (error) {
     log.warn('openclaw status failed', {
       command: OPENCLAW_BIN,
@@ -46,14 +87,14 @@ export async function getOpenClawStatusContext(): Promise<string | null> {
 
 export async function notifyOpenClawMainAgentOfNewMail(
   summary: SyncMailboxResult,
-  channelContext: string,
+  channelContext: string[],
 ): Promise<boolean> {
   const message = [
     `New mail arrived. This zMail sync detected ${summary.inbox_new} new inbox message(s).`,
     'Please notify the channel by sending a message to the channel-provided number itself, not to any other person or contact.',
     'If no usable channel is configured, tell the user to configure a channel first so channel notifications can be used.',
-    'openclaw status returned the following information. Please find the channel context yourself:',
-    channelContext,
+    'Linked channel self context from openclaw status --json --deep:',
+    ...channelContext,
   ].join('\n\n');
 
   try {
