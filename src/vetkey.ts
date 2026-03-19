@@ -46,15 +46,25 @@ import { canisterCallError } from './error.js';
 import * as log from './log.js';
 import { generalParseAiIdToRecord, isReadableId } from './aiid.js';
 
-/**
- * Absolute path to cli.js (the CLI entry script).
- * Used by startDaemonBackground() to spawn daemon child processes via
- * `process.execPath` (the current Node binary) + this script path, so that
- * daemon spawning works regardless of how the CLI was invoked (global install,
- * npx, node dist/cli.js, etc.).
- */
-const CLI_ENTRY_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'cli.js');
+function resolveDaemonSpawnArgs(pemPath: string): string[] | undefined {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const cliJsPath = join(moduleDir, 'cli.js');
+  if (existsSync(cliJsPath)) {
+    return [cliJsPath, 'vetkey', 'serve', `--identity=${pemPath}`];
+  }
+
+  const cliTsPath = join(moduleDir, 'cli.ts');
+  if (existsSync(cliTsPath)) {
+    return ['--import', 'tsx', cliTsPath, 'vetkey', 'serve', `--identity=${pemPath}`];
+  }
+
+  return undefined;
+}
+
 const ZMAIL_SYNC_TASK_INTERVAL_MS = 2 * 60 * 1000;
+const DAEMON_START_LOCK_TTL_MS = 30_000;
+const DAEMON_READY_WAIT_TIMEOUT_MS = 25_000;
+const DAEMON_READY_POLL_INTERVAL_MS = 250;
 
 // ============================================================================
 // Module Entry Point
@@ -595,7 +605,7 @@ async function cmdStatus(session: Session): Promise<void> {
     if (jsonOutput) {
       console.log(JSON.stringify({ status: "not_running" }));
     } else {
-      console.log("Daemon is not running. Use 'zcloak-ai vetkey serve' to start it.");
+      console.log("Daemon is not running. Wait 5~10 seconds for it to start.");
     }
     return;
   }
@@ -692,14 +702,13 @@ export function startDaemonBackground(pemPath: string, principal: string): numbe
   }
 
   try {
-    // Use process.execPath (current Node binary) + CLI_ENTRY_SCRIPT (absolute
-    // path to cli.js) instead of 'zcloak-ai'. This ensures daemon spawning
-    // works regardless of how the CLI was invoked (global install, npx, or
-    // direct `node dist/cli.js`), avoiding ENOENT when 'zcloak-ai' is not on PATH.
-    const child = spawn(process.execPath, [
-      CLI_ENTRY_SCRIPT,
-      'vetkey', 'serve', `--identity=${pemPath}`,
-    ], {
+    const spawnArgs = resolveDaemonSpawnArgs(pemPath);
+    if (!spawnArgs) {
+      closeSync(logFd);
+      return undefined;
+    }
+
+    const child = spawn(process.execPath, spawnArgs, {
       detached: true,
       stdio: ['ignore', 'ignore', logFd],
     });
@@ -721,6 +730,65 @@ export function startDaemonBackground(pemPath: string, principal: string): numbe
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+function daemonStartLockPath(principal: string): string {
+  return join(runtimeDir(), `${sanitizeDerivationId(principal)}.starting.lock`);
+}
+
+function hasFreshDaemonStartLock(principal: string): boolean {
+  try {
+    const stat = statSync(daemonStartLockPath(principal));
+    return (Date.now() - stat.mtimeMs) < DAEMON_START_LOCK_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForDaemonReady(principal: string, timeoutMs = DAEMON_READY_WAIT_TIMEOUT_MS): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    if (isDaemonAlive(principal)) {
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, DAEMON_READY_POLL_INTERVAL_MS));
+  }
+
+  return isDaemonAlive(principal);
+}
+
+async function ensureDaemonReadyForRecvMsg(principal: string): Promise<void> {
+  if (isDaemonAlive(principal)) {
+    log.debug('recv-msg daemon check: daemon already running', { principal });
+    return;
+  }
+
+  const hasFreshLock = hasFreshDaemonStartLock(principal);
+  log.debug('recv-msg daemon check: daemon not running', {
+    principal,
+    hasFreshStartLock: hasFreshLock,
+    lockPath: daemonStartLockPath(principal),
+  });
+
+  if (hasFreshLock) {
+    log.debug('recv-msg daemon check: waiting for daemon ready', {
+      principal,
+      timeoutMs: DAEMON_READY_WAIT_TIMEOUT_MS,
+      pollIntervalMs: DAEMON_READY_POLL_INTERVAL_MS,
+    });
+
+    if (await waitForDaemonReady(principal)) {
+      log.debug('recv-msg daemon check: daemon became ready while waiting', { principal });
+      return;
+    }
+
+    log.debug('recv-msg daemon check: wait timed out', { principal });
+  }
+
+  throw new Error(
+    "Mail daemon is not running yet. Wait 5~10 seconds for it to start, then try again.",
+  );
+}
 
 /** Safely delete a file, ignoring errors if it doesn't exist */
 function safeUnlinkPath(filePath: string): void {
@@ -1482,11 +1550,7 @@ async function cmdRecvMsg(session: Session): Promise<void> {
   }
 
   const mailDerivationId = `${principal}:Mail`;
-  if (!isDaemonAlive(principal)) {
-    throw new Error(
-      "Mail daemon is not running. Start it first with 'zcloak-ai vetkey serve'.",
-    );
-  }
+  await ensureDaemonReadyForRecvMsg(principal);
 
   const sockPath = socketPath(principal);
   const response = await sendRpcToSocket(sockPath, {

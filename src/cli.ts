@@ -252,6 +252,8 @@ async function main(): Promise<void> {
     // Step 1: Skip commands that conflict with daemon warm-up
     const skipWarmUp =
       (moduleName === 'vetkey' && process.argv[3] === 'serve') ||
+      (moduleName === 'vetkey' && process.argv[3] === 'stop') ||
+      (moduleName === 'vetkey' && process.argv[3] === 'status') ||
       (moduleName === 'identity' && process.argv[3] === 'generate');
     if (skipWarmUp) return;
     warmUpDaemonForCurrentIdentity(process.argv);

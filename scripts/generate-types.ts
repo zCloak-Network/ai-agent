@@ -340,7 +340,6 @@ const HEADER_TEMPLATE = (source: string) => `/**
  *
  * Run \`npm run generate-types\` to regenerate this file.
  * Source: ${source} in src/idl.ts
- * Generated: ${new Date().toISOString().replace(/\\.\\d{3}Z$/, 'Z')}
  *
  * These types are derived from the Candid IDL definitions and correspond to
  * the canister's runtime interface. Edit idl.ts to change type definitions.
@@ -497,9 +496,7 @@ function main(): void {
       }
 
       const existing = fs.readFileSync(file.path, 'utf-8');
-      // Compare without the "Generated:" timestamp line (which changes every run)
-      const stripTimestamp = (s: string) => s.replace(/^ \* Generated: .+$/m, '');
-      if (stripTimestamp(existing) !== stripTimestamp(file.content)) {
+      if (existing !== file.content) {
         console.error(`OUT OF SYNC: ${file.name} differs from generated output`);
         console.error(`Run \`npm run generate-types\` to update.`);
         allMatch = false;

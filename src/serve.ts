@@ -11,14 +11,14 @@
  *     operates with the same filesystem permissions as the calling process.
  */
 
-import { createServer, type Socket } from 'net';
-import { createInterface } from 'readline';
-import { readFileSync, writeFileSync, statSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { KeyStore } from './key-store.js';
-import { DaemonRuntime } from './daemon.js';
-import type { PeriodicTaskHandle } from './daemon-tasks.js';
+import { createServer, type Socket } from "net";
+import { createInterface } from "readline";
+import { readFileSync, writeFileSync, statSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+import { KeyStore } from "./key-store.js";
+import { DaemonRuntime } from "./daemon.js";
+import type { PeriodicTaskHandle } from "./daemon-tasks.js";
 import {
   type RpcRequest,
   type RpcResponse,
@@ -33,8 +33,8 @@ import {
   errorResponse,
   parseRpcRequest,
   isErrorResponse,
-} from './rpc.js';
-import * as log from './log.js';
+} from "./rpc.js";
+import * as log from "./log.js";
 
 /** Maximum data size for encrypt/decrypt operations (1 GB) */
 const MAX_DATA_SIZE = 1024 * 1024 * 1024;
@@ -72,32 +72,56 @@ function handleRequest(
   const { id, method } = req;
   const effectiveMailKeyStore = mailKeyStore ?? activeKeyStore;
   const loadedKeyNames = [activeKeyStore, effectiveMailKeyStore]
-    .filter((store, index, stores): store is KeyStore =>
-      store !== null && stores.findIndex(candidate => candidate?.derivationId === store.derivationId) === index,
+    .filter(
+      (store, index, stores): store is KeyStore =>
+        store !== null &&
+        stores.findIndex(
+          (candidate) => candidate?.derivationId === store.derivationId,
+        ) === index,
     )
-    .map(store => store.derivationId.split(':').slice(1).join(':') || 'default');
+    .map(
+      (store) => store.derivationId.split(":").slice(1).join(":") || "default",
+    );
 
   switch (method) {
     case "encrypt": {
-      const result = handleEncrypt(req.params as EncryptParams | undefined, activeKeyStore);
+      const result = handleEncrypt(
+        req.params as EncryptParams | undefined,
+        activeKeyStore,
+      );
       if ("error" in result) {
-        return { response: errorResponse(id, result.error), action: "continue" };
+        return {
+          response: errorResponse(id, result.error),
+          action: "continue",
+        };
       }
       return { response: successResponse(id, result), action: "continue" };
     }
 
     case "decrypt": {
-      const result = handleDecrypt(req.params as DecryptParams | undefined, activeKeyStore);
+      const result = handleDecrypt(
+        req.params as DecryptParams | undefined,
+        activeKeyStore,
+      );
       if ("error" in result) {
-        return { response: errorResponse(id, result.error), action: "continue" };
+        return {
+          response: errorResponse(id, result.error),
+          action: "continue",
+        };
       }
       return { response: successResponse(id, result), action: "continue" };
     }
 
     case "ibe-decrypt": {
-      const result = handleIbeDecrypt(req.params as IbeDecryptParams | undefined, effectiveMailKeyStore);
+      const result = handleIbeDecrypt(
+        req.params as IbeDecryptParams | undefined,
+        effectiveMailKeyStore,
+      );
       if ("error" in result) {
-        return { response: errorResponse(id, result.error), action: "continue" };
+        return {
+          response: errorResponse(id, result.error),
+          action: "continue",
+        };
       }
       return { response: successResponse(id, result), action: "continue" };
     }
@@ -124,7 +148,9 @@ function handleRequest(
     case "shutdown":
       // Stop the entire daemon
       return {
-        response: successResponse(id, { message: "Shutting down, key zeroized" }),
+        response: successResponse(id, {
+          message: "Shutting down, key zeroized",
+        }),
         action: "shutdown",
       };
 
@@ -172,13 +198,17 @@ function handleEncrypt(
     try {
       ciphertext = keyStore.encrypt(plaintext);
     } catch (e) {
-      return { error: `Encryption failed: ${e instanceof Error ? e.message : String(e)}` };
+      return {
+        error: `Encryption failed: ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
 
     try {
       writeFileSync(params.output_file, ciphertext);
     } catch (e) {
-      return { error: `Failed to write '${params.output_file}': ${e instanceof Error ? e.message : String(e)}` };
+      return {
+        error: `Failed to write '${params.output_file}': ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
 
     return {
@@ -190,7 +220,7 @@ function handleEncrypt(
 
   if (params.data_base64) {
     // Inline mode — check size before decoding
-    if (params.data_base64.length > MAX_DATA_SIZE * 4 / 3 + 4) {
+    if (params.data_base64.length > (MAX_DATA_SIZE * 4) / 3 + 4) {
       return {
         error: `data_base64 too large: ${params.data_base64.length} chars (decoded would exceed ${MAX_DATA_SIZE} byte limit)`,
       };
@@ -200,7 +230,9 @@ function handleEncrypt(
     try {
       plaintext = Buffer.from(params.data_base64, "base64");
     } catch (e) {
-      return { error: `Invalid base64 input: ${e instanceof Error ? e.message : String(e)}` };
+      return {
+        error: `Invalid base64 input: ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
 
     const plaintextSize = plaintext.length;
@@ -209,16 +241,24 @@ function handleEncrypt(
     try {
       ciphertext = keyStore.encrypt(plaintext);
     } catch (e) {
-      return { error: `Encryption failed: ${e instanceof Error ? e.message : String(e)}` };
+      return {
+        error: `Encryption failed: ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
 
     // Write ciphertext to output file (use provided path or auto-generate)
-    const outputFile = params.output_file
-      ?? join(tmpdir(), `vetkey_encrypted_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.enc`);
+    const outputFile =
+      params.output_file ??
+      join(
+        tmpdir(),
+        `vetkey_encrypted_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.enc`,
+      );
     try {
       writeFileSync(outputFile, ciphertext);
     } catch (e) {
-      return { error: `Failed to write '${outputFile}': ${e instanceof Error ? e.message : String(e)}` };
+      return {
+        error: `Failed to write '${outputFile}': ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
 
     return {
@@ -260,13 +300,17 @@ function handleDecrypt(
     try {
       plaintext = keyStore.decrypt(ciphertext);
     } catch (e) {
-      return { error: `Decryption failed: ${e instanceof Error ? e.message : String(e)}` };
+      return {
+        error: `Decryption failed: ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
 
     try {
       writeFileSync(params.output_file, plaintext);
     } catch (e) {
-      return { error: `Failed to write '${params.output_file}': ${e instanceof Error ? e.message : String(e)}` };
+      return {
+        error: `Failed to write '${params.output_file}': ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
 
     return {
@@ -277,7 +321,7 @@ function handleDecrypt(
 
   if (params.data_base64) {
     // Inline mode
-    if (params.data_base64.length > MAX_DATA_SIZE * 4 / 3 + 4) {
+    if (params.data_base64.length > (MAX_DATA_SIZE * 4) / 3 + 4) {
       return {
         error: `data_base64 too large: ${params.data_base64.length} chars (decoded would exceed ${MAX_DATA_SIZE} byte limit)`,
       };
@@ -287,14 +331,18 @@ function handleDecrypt(
     try {
       ciphertext = Buffer.from(params.data_base64, "base64");
     } catch (e) {
-      return { error: `Invalid base64 input: ${e instanceof Error ? e.message : String(e)}` };
+      return {
+        error: `Invalid base64 input: ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
 
     let plaintext: Buffer;
     try {
       plaintext = keyStore.decrypt(ciphertext);
     } catch (e) {
-      return { error: `Decryption failed: ${e instanceof Error ? e.message : String(e)}` };
+      return {
+        error: `Decryption failed: ${e instanceof Error ? e.message : String(e)}`,
+      };
     }
 
     return {
@@ -320,7 +368,9 @@ function handleIbeDecrypt(
   if (!params) return { error: "Missing ibe-decrypt params" };
 
   if (!keyStore.hasIbeSupport) {
-    return { error: "This daemon does not have IBE support (VetKey not cached)" };
+    return {
+      error: "This daemon does not have IBE support (VetKey not cached)",
+    };
   }
 
   if (!params.ibe_identity) {
@@ -337,7 +387,7 @@ function handleIbeDecrypt(
   }
 
   // Size check before base64 decode
-  if (params.ciphertext_base64.length > MAX_IBE_DATA_SIZE * 4 / 3 + 4) {
+  if (params.ciphertext_base64.length > (MAX_IBE_DATA_SIZE * 4) / 3 + 4) {
     return {
       error: `ciphertext_base64 too large: ${params.ciphertext_base64.length} chars (max payload ${MAX_IBE_DATA_SIZE} bytes)`,
     };
@@ -345,9 +395,14 @@ function handleIbeDecrypt(
 
   let ciphertext: Buffer;
   try {
-    ciphertext = decodeBase64Strict(params.ciphertext_base64, "ciphertext_base64");
+    ciphertext = decodeBase64Strict(
+      params.ciphertext_base64,
+      "ciphertext_base64",
+    );
   } catch (e) {
-    return { error: `Invalid base64 ciphertext: ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      error: `Invalid base64 ciphertext: ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
   if (ciphertext.length > MAX_IBE_DATA_SIZE) {
     return {
@@ -359,7 +414,9 @@ function handleIbeDecrypt(
   try {
     plaintext = keyStore.ibeDecrypt(params.ibe_identity, ciphertext);
   } catch (e) {
-    return { error: `IBE decryption failed: ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      error: `IBE decryption failed: ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
 
   return {
@@ -372,7 +429,11 @@ function decodeBase64Strict(value: string, fieldName: string): Buffer {
   if (value.length === 0) {
     return Buffer.alloc(0);
   }
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+  if (
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+      value,
+    )
+  ) {
     throw new Error(`Invalid ${fieldName}: expected base64`);
   }
   return Buffer.from(value, "base64");
@@ -386,14 +447,20 @@ function readFileChecked(filePath: string): Buffer | { error: string } {
   try {
     const stat = statSync(filePath);
     if (!stat.isFile()) {
-      return { error: `'${filePath}' is not a regular file (refusing to read devices/pipes/sockets)` };
+      return {
+        error: `'${filePath}' is not a regular file (refusing to read devices/pipes/sockets)`,
+      };
     }
     if (stat.size > MAX_DATA_SIZE) {
-      return { error: `File '${filePath}' is too large: ${stat.size} bytes (max ${MAX_DATA_SIZE} bytes)` };
+      return {
+        error: `File '${filePath}' is too large: ${stat.size} bytes (max ${MAX_DATA_SIZE} bytes)`,
+      };
     }
     return readFileSync(filePath);
   } catch (e) {
-    return { error: `Cannot read '${filePath}': ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      error: `Cannot read '${filePath}': ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
 }
 
@@ -491,7 +558,10 @@ export function runDaemonUds(
       // Emit ready info to stderr
       log.info(`Daemon ready. Socket: ${sockPath}`);
       log.info(`Active derivation ID: ${activeKeyStore.derivationId}`);
-      if (mailKeyStore && mailKeyStore.derivationId !== activeKeyStore.derivationId) {
+      if (
+        mailKeyStore &&
+        mailKeyStore.derivationId !== activeKeyStore.derivationId
+      ) {
         log.info(`Mail derivation ID: ${mailKeyStore.derivationId}`);
       }
       log.info(`Principal: ${principal}`);
@@ -499,7 +569,7 @@ export function runDaemonUds(
         try {
           backgroundTasks.push(createTask());
         } catch (error) {
-          log.warn('Failed to start daemon background task', {
+          log.warn("Failed to start daemon background task", {
             message: error instanceof Error ? error.message : String(error),
           });
         }
@@ -515,10 +585,19 @@ export function runDaemonUds(
     });
 
     // Step 4: Signal handling — store references for cleanup in finishShutdown()
-    const onSigterm = () => { log.warn("Received SIGTERM, initiating graceful shutdown..."); initiateShutdown(); };
-    const onSigint = () => { log.warn("Received SIGINT, initiating graceful shutdown..."); initiateShutdown(); };
+    const onSigterm = () => {
+      log.warn("Received SIGTERM, initiating graceful shutdown...");
+      initiateShutdown();
+    };
+    const onSigint = () => {
+      log.warn("Received SIGINT, initiating graceful shutdown...");
+      initiateShutdown();
+    };
     // SIGHUP: terminal hangup — gracefully shut down instead of crashing
-    const onSighup = () => { log.warn("Received SIGHUP, initiating graceful shutdown..."); initiateShutdown(); };
+    const onSighup = () => {
+      log.warn("Received SIGHUP, initiating graceful shutdown...");
+      initiateShutdown();
+    };
 
     process.on("SIGTERM", onSigterm);
     process.on("SIGINT", onSigint);
@@ -589,16 +668,19 @@ export function runDaemonUds(
       }
 
       // Cleanup: destroy key, remove files
-      const uniqueKeyStores = [activeKeyStore, mailKeyStore]
-        .filter((store, index, stores): store is KeyStore =>
-          store !== null && stores.findIndex(candidate => candidate?.derivationId === store.derivationId) === index,
-        );
+      const uniqueKeyStores = [activeKeyStore, mailKeyStore].filter(
+        (store, index, stores): store is KeyStore =>
+          store !== null &&
+          stores.findIndex(
+            (candidate) => candidate?.derivationId === store.derivationId,
+          ) === index,
+      );
       for (const store of uniqueKeyStores) {
         store.destroy();
       }
       runtime.destroy();
 
-      log.info("Daemon stopped. Key has been zeroized.");
+      log.info("Daemon stopped.");
       resolve();
     }
   });
