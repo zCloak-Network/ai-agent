@@ -118,7 +118,12 @@ function warmUpDaemonForCurrentIdentity(argv: string[]): void {
 
   const { pemPath, principal } = context;
 
-  if (isDaemonAlive(principal)) return;
+  if (isDaemonAlive(principal)) {
+    log.debug('Daemon warm-up skipped because daemon is already running', {
+      principal,
+    });
+    return;
+  }
   if (!tryAcquireDaemonStartLock(principal)) {
     log.debug('Daemon warm-up skipped because start lock is already held', {
       principal,
@@ -128,7 +133,15 @@ function warmUpDaemonForCurrentIdentity(argv: string[]): void {
   }
 
   try {
-    startDaemonBackground(pemPath, principal);
+    log.debug('Daemon warm-up starting background daemon', {
+      principal,
+      pemPath,
+    });
+    const pid = startDaemonBackground(pemPath, principal);
+    log.debug('Daemon warm-up background spawn result', {
+      principal,
+      pid: pid ?? null,
+    });
   } catch {
     // Best-effort — ignore spawn failures
   }
