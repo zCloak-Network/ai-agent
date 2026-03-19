@@ -36,7 +36,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Session } from "./session.js";
 import { preCheck } from "./pre-check.js";
-import { DEFAULT_PEM_PATH, loadIdentityFromPath } from "./identity.js";
+import { getPemPath, loadIdentityFromPath } from "./identity.js";
 import { startDaemonBackground, stopAllDaemons } from "./vetkey.js";
 import { isDaemonAlive, runtimeDir, sanitizeDerivationId } from "./daemon.js";
 import * as log from "./log.js";
@@ -127,9 +127,7 @@ function resolveWarmUpContext(
   argv: string[],
 ): { pemPath: string; principal: string } | null {
   const identityArg = argv.find((a) => a.startsWith("--identity="));
-  const pemPath = identityArg
-    ? identityArg.split("=").slice(1).join("=")
-    : DEFAULT_PEM_PATH;
+  const pemPath = getPemPath(argv);
 
   log.debug("Daemon warm-up resolving context", {
     identityArg: identityArg ?? null,
