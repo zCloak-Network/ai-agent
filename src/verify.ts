@@ -81,7 +81,11 @@ async function resolveSigners(session: Session, events: SignEvent[]): Promise<vo
       } else {
         console.log('Agent Name: (not registered)');
       }
-    } catch {
+    } catch (error) {
+      log.warn('Failed to query signer username from registry', {
+        aiId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       console.log('Agent Name: (query failed)');
     }
   }

@@ -144,6 +144,10 @@ export function isDaemonAlive(derivationId: string): boolean {
       // PID is alive — also verify socket file exists
       return existsSync(sock);
     } catch {
+      log.warn('Failed to read daemon PID file, falling back to socket-only liveness check', {
+        derivationId,
+        pidPath: pid,
+      });
       // PID file read error — fall through to socket-only check
     }
   }
@@ -291,7 +295,13 @@ export class DaemonRuntime {
 function safeUnlink(filePath: string): void {
   try {
     unlinkSync(filePath);
-  } catch {
-    // Ignore — file may not exist
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code && code !== 'ENOENT') {
+      log.warn('Failed to remove daemon runtime file during cleanup', {
+        filePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

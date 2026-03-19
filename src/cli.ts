@@ -31,15 +31,15 @@
  *   zcloak-ai verify file ./report.pdf
  */
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { Session } from './session.js';
-import { preCheck } from './pre-check.js';
-import { DEFAULT_PEM_PATH, loadIdentityFromPath } from './identity.js';
-import { startDaemonBackground, stopAllDaemons } from './vetkey.js';
-import { isDaemonAlive, runtimeDir, sanitizeDerivationId } from './daemon.js';
-import * as log from './log.js';
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { Session } from "./session.js";
+import { preCheck } from "./pre-check.js";
+import { DEFAULT_PEM_PATH, loadIdentityFromPath } from "./identity.js";
+import { startDaemonBackground, stopAllDaemons } from "./vetkey.js";
+import { isDaemonAlive, runtimeDir, sanitizeDerivationId } from "./daemon.js";
+import * as log from "./log.js";
 
 /** ESM equivalent of __dirname */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -47,22 +47,25 @@ const DAEMON_START_LOCK_TTL_MS = 30_000;
 
 /** Supported modules and their corresponding script files (compiled in dist/ directory) */
 const MODULES: Record<string, string> = {
-  identity: 'identity_cmd',
-  register: 'register',
-  sign: 'sign',
-  verify: 'verify',
-  feed: 'feed',
-  bind: 'bind',
-  delete: 'delete',
-  doc: 'doc',
-  pow: 'pow',
-  vetkey: 'vetkey',
-  social: 'social',
-  zmail: 'zmail',
+  identity: "identity_cmd",
+  register: "register",
+  sign: "sign",
+  verify: "verify",
+  feed: "feed",
+  bind: "bind",
+  delete: "delete",
+  doc: "doc",
+  pow: "pow",
+  vetkey: "vetkey",
+  social: "social",
+  zmail: "zmail",
 };
 
 function daemonStartLockPath(derivationId: string): string {
-  return path.join(runtimeDir(), `${sanitizeDerivationId(derivationId)}.starting.lock`);
+  return path.join(
+    runtimeDir(),
+    `${sanitizeDerivationId(derivationId)}.starting.lock`,
+  );
 }
 
 function tryAcquireDaemonStartLock(derivationId: string): boolean {
@@ -70,7 +73,15 @@ function tryAcquireDaemonStartLock(derivationId: string): boolean {
 
   try {
     fs.mkdirSync(runtimeDir(), { recursive: true });
-  } catch {
+  } catch (error) {
+    log.warn(
+      "Failed to ensure daemon runtime directory before acquiring start lock",
+      {
+        derivationId,
+        lockPath,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
     return false;
   }
 
@@ -81,51 +92,106 @@ function tryAcquireDaemonStartLock(derivationId: string): boolean {
       return false;
     }
     fs.unlinkSync(lockPath);
-  } catch {
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code && code !== "ENOENT") {
+      log.warn(
+        "Failed while checking or cleaning an existing daemon start lock",
+        {
+          derivationId,
+          lockPath,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
     // No existing lock (or unreadable lock) — continue and try to create one.
   }
 
   try {
-    fs.writeFileSync(lockPath, String(Date.now()), { flag: 'wx' });
+    fs.writeFileSync(lockPath, String(Date.now()), { flag: "wx" });
     return true;
-  } catch {
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code && code !== "EEXIST") {
+      log.warn("Failed to create daemon start lock", {
+        derivationId,
+        lockPath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return false;
   }
 }
 
-function resolveWarmUpContext(argv: string[]): { pemPath: string; principal: string } | null {
-  const identityArg = argv.find(a => a.startsWith('--identity='));
+function resolveWarmUpContext(
+  argv: string[],
+): { pemPath: string; principal: string } | null {
+  const identityArg = argv.find((a) => a.startsWith("--identity="));
   const pemPath = identityArg
-    ? identityArg.split('=').slice(1).join('=')
+    ? identityArg.split("=").slice(1).join("=")
     : DEFAULT_PEM_PATH;
 
-  if (!fs.existsSync(pemPath)) return null;
+  log.debug("Daemon warm-up resolving context", {
+    identityArg: identityArg ?? null,
+    pemPath,
+  });
+
+  if (!fs.existsSync(pemPath)) {
+    log.debug(
+      "Daemon warm-up context unavailable because PEM file does not exist",
+      {
+        pemPath,
+      },
+    );
+    return null;
+  }
 
   try {
     const identity = loadIdentityFromPath(pemPath);
-    return {
+    const context = {
       pemPath,
       principal: identity.getPrincipal().toText(),
     };
-  } catch {
+    log.debug("Daemon warm-up context resolved", context);
+    return context;
+  } catch (error) {
+    log.warn(
+      "Daemon warm-up context resolution failed while loading identity",
+      {
+        pemPath,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
+    log.debug(
+      "Daemon warm-up context resolution failed while loading identity",
+      {
+        pemPath,
+      },
+    );
     return null;
   }
 }
 
 function warmUpDaemonForCurrentIdentity(argv: string[]): void {
+  log.debug("Daemon warm-up entry", {
+    argv: argv.slice(2),
+  });
   const context = resolveWarmUpContext(argv);
-  if (!context) return;
+  if (!context) {
+    log.debug("Daemon warm-up aborted because context could not be resolved");
+    return;
+  }
 
   const { pemPath, principal } = context;
 
   if (isDaemonAlive(principal)) {
-    log.debug('Daemon warm-up skipped because daemon is already running', {
+    log.debug("Daemon warm-up skipped because daemon is already running", {
       principal,
     });
     return;
   }
   if (!tryAcquireDaemonStartLock(principal)) {
-    log.debug('Daemon warm-up skipped because start lock is already held', {
+    log.debug("Daemon warm-up skipped because start lock is already held", {
       principal,
       lockPath: daemonStartLockPath(principal),
     });
@@ -133,53 +199,75 @@ function warmUpDaemonForCurrentIdentity(argv: string[]): void {
   }
 
   try {
-    log.debug('Daemon warm-up starting background daemon', {
+    log.debug("Daemon warm-up starting background daemon", {
       principal,
       pemPath,
     });
     const pid = startDaemonBackground(pemPath, principal);
-    log.debug('Daemon warm-up background spawn result', {
+    log.debug("Daemon warm-up background spawn result", {
       principal,
       pid: pid ?? null,
     });
-  } catch {
-    // Best-effort — ignore spawn failures
+  } catch (error) {
+    log.warn("Daemon warm-up background spawn threw unexpectedly", {
+      principal,
+      pemPath,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
 function showHelp(): void {
-  console.log('zCloak.ai Agent CLI');
-  console.log('');
-  console.log('Usage: zcloak-ai <module> <command> [args] [options]');
-  console.log('');
-  console.log('Modules:');
-  console.log('  identity    Identity key management (generate, show)');
-  console.log('  register    Registration management (get-principal, lookup, register, ...)');
-  console.log('  sign        Signing operations (post, like, reply, profile, sign-file, ...)');
-  console.log('  verify      Verification operations (message, file, folder, profile)');
-  console.log('  feed        Event queries (counter, fetch)');
-  console.log('  bind        Agent-Owner binding (prepare, check-passkey)');
-  console.log('  delete      File deletion with 2FA verification (prepare, check, confirm)');
-  console.log('  doc         Document tools (manifest, verify-manifest, hash, info)');
-  console.log('  pow         PoW computation (<base_string> <zeros>)');
-  console.log('  vetkey      VetKey encryption/decryption (encrypt-sign, decrypt, ...)');
-  console.log('  social      Social profile query (get-profile)');
-  console.log('  zmail       Encrypted mail (register, sync, inbox, sent, ack)');
-  console.log('  pre-check   Manually run the package/skill update pre-check');
-  console.log('');
-  console.log('Global options:');
-  console.log('  --identity=<pem_path>     Specify identity PEM file');
-  console.log('');
-  console.log('Examples:');
-  console.log('  zcloak-ai register get-principal');
-  console.log('  zcloak-ai sign post "Hello world!" --sub=web3 --tags=t:crypto');
-  console.log('  zcloak-ai feed counter');
-  console.log('  zcloak-ai verify file ./report.pdf');
-  console.log('  zcloak-ai doc hash ./report.pdf');
-  console.log('  zcloak-ai pre-check');
-  console.log('');
-  console.log('Module help:');
-  console.log('  zcloak-ai <module>     (run without command to show module help)');
+  console.log("zCloak.ai Agent CLI");
+  console.log("");
+  console.log("Usage: zcloak-ai <module> <command> [args] [options]");
+  console.log("");
+  console.log("Modules:");
+  console.log("  identity    Identity key management (generate, show)");
+  console.log(
+    "  register    Registration management (get-principal, lookup, register, ...)",
+  );
+  console.log(
+    "  sign        Signing operations (post, like, reply, profile, sign-file, ...)",
+  );
+  console.log(
+    "  verify      Verification operations (message, file, folder, profile)",
+  );
+  console.log("  feed        Event queries (counter, fetch)");
+  console.log("  bind        Agent-Owner binding (prepare, check-passkey)");
+  console.log(
+    "  delete      File deletion with 2FA verification (prepare, check, confirm)",
+  );
+  console.log(
+    "  doc         Document tools (manifest, verify-manifest, hash, info)",
+  );
+  console.log("  pow         PoW computation (<base_string> <zeros>)");
+  console.log(
+    "  vetkey      VetKey encryption/decryption (encrypt-sign, decrypt, ...)",
+  );
+  console.log("  social      Social profile query (get-profile)");
+  console.log(
+    "  zmail       Encrypted mail (register, sync, inbox, sent, ack)",
+  );
+  console.log("  pre-check   Manually run the package/skill update pre-check");
+  console.log("");
+  console.log("Global options:");
+  console.log("  --identity=<pem_path>     Specify identity PEM file");
+  console.log("");
+  console.log("Examples:");
+  console.log("  zcloak-ai register get-principal");
+  console.log(
+    '  zcloak-ai sign post "Hello world!" --sub=web3 --tags=t:crypto',
+  );
+  console.log("  zcloak-ai feed counter");
+  console.log("  zcloak-ai verify file ./report.pdf");
+  console.log("  zcloak-ai doc hash ./report.pdf");
+  console.log("  zcloak-ai pre-check");
+  console.log("");
+  console.log("Module help:");
+  console.log(
+    "  zcloak-ai <module>     (run without command to show module help)",
+  );
 }
 
 /**
@@ -196,21 +284,20 @@ function showHelp(): void {
  * so the sub-script receives the same parsed arguments as before.
  */
 async function main(): Promise<void> {
-
   // Get module name (skip node and script path)
   const moduleName = process.argv[2];
 
-  if (!moduleName || moduleName === '--help' || moduleName === '-h') {
+  if (!moduleName || moduleName === "--help" || moduleName === "-h") {
     showHelp();
     process.exit(0);
   }
 
-  if (moduleName === 'pre-check') {
+  if (moduleName === "pre-check") {
     const checkResult = await preCheck();
     if (checkResult.message) {
       log.info(checkResult.message);
     } else {
-      log.info('Pre-check complete. No updates were applied.');
+      log.info("Pre-check complete. No updates were applied.");
     }
     process.exit(0);
   }
@@ -219,9 +306,9 @@ async function main(): Promise<void> {
   const scriptFile = MODULES[moduleName];
   if (!scriptFile) {
     console.error(`Unknown module: ${moduleName}`);
-    console.error('');
-    console.error('Available modules: ' + Object.keys(MODULES).join(', '));
-    console.error('Run zcloak-ai --help for help');
+    console.error("");
+    console.error("Available modules: " + Object.keys(MODULES).join(", "));
+    console.error("Run zcloak-ai --help for help");
     process.exit(1);
   }
 
@@ -264,10 +351,15 @@ async function main(): Promise<void> {
   (() => {
     // Step 1: Skip commands that conflict with daemon warm-up
     const skipWarmUp =
-      (moduleName === 'vetkey' && process.argv[3] === 'serve') ||
-      (moduleName === 'vetkey' && process.argv[3] === 'stop') ||
-      (moduleName === 'vetkey' && process.argv[3] === 'status') ||
-      (moduleName === 'identity' && process.argv[3] === 'generate');
+      (moduleName === "vetkey" && process.argv[3] === "serve") ||
+      (moduleName === "vetkey" && process.argv[3] === "stop") ||
+      (moduleName === "vetkey" && process.argv[3] === "status") ||
+      (moduleName === "identity" && process.argv[3] === "generate");
+    log.debug("Daemon warm-up checking whether to skip based on command", {
+      moduleName,
+      command: process.argv[3],
+      skipWarmUp,
+    });
     if (skipWarmUp) return;
     warmUpDaemonForCurrentIdentity(process.argv);
   })();

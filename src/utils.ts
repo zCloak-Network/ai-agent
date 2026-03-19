@@ -10,6 +10,7 @@ import path from 'path';
 import crypto from 'crypto';
 import config from './config.js';
 import { getPemPath, loadIdentityFromPath } from './identity.js';
+import * as log from './log.js';
 import type { ParsedArgs, PowResult, ManifestOptions, ManifestResult, ManifestEntry, ManifestVerifyResult } from './types/common.js';
 import type { SignEvent, SignResult } from './types/sign-event.js';
 
@@ -235,7 +236,10 @@ export function generateManifest(folderPath: string, options?: ManifestOptions):
   try {
     const pemPath = getPemPath();
     author = loadIdentityFromPath(pemPath).getPrincipal().toText();
-  } catch {
+  } catch (error) {
+    log.warn('Failed to load identity for manifest author field; leaving author empty', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     // No identity configured or PEM parse failed — leave author field empty
   }
 

@@ -657,7 +657,14 @@ export async function stopAllDaemons(): Promise<void> {
   let entries: string[];
   try {
     entries = readdirSync(dir);
-  } catch {
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code && code !== 'ENOENT') {
+      log.warn('Failed to read daemon runtime directory during upgrade shutdown', {
+        dir,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return; // Runtime directory doesn't exist — no daemons running
   }
 
@@ -667,8 +674,12 @@ export async function stopAllDaemons(): Promise<void> {
     try {
       await sendRpcToSocket(sock, { id: 1, method: "shutdown" });
       log.info(`Daemon stopped (${sockFile}) before upgrade.`);
-    } catch {
-      // Best-effort — daemon may already be gone or socket is stale
+    } catch (error) {
+      log.warn('Failed to stop daemon before upgrade', {
+        sockFile,
+        sock,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }
@@ -690,14 +701,23 @@ export function startDaemonBackground(pemPath: string, principal: string): numbe
 
   try {
     mkdirSync(logDir, { recursive: true });
-  } catch {
-    // Best effort — directory may already exist
+  } catch (error) {
+    log.warn('Failed to ensure daemon log directory before background spawn', {
+      logDir,
+      principal,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   let logFd: number;
   try {
     logFd = openSync(logPath, 'a');
-  } catch {
+  } catch (error) {
+    log.warn('Failed to open daemon log file for background spawn', {
+      logPath,
+      principal,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return undefined;
   }
 
@@ -721,7 +741,12 @@ export function startDaemonBackground(pemPath: string, principal: string): numbe
     closeSync(logFd);
 
     return child.pid;
-  } catch {
+  } catch (error) {
+    log.warn('Failed to spawn background daemon process', {
+      pemPath,
+      principal,
+      error: error instanceof Error ? error.message : String(error),
+    });
     closeSync(logFd);
     return undefined;
   }
@@ -792,7 +817,17 @@ async function ensureDaemonReadyForRecvMsg(principal: string): Promise<void> {
 
 /** Safely delete a file, ignoring errors if it doesn't exist */
 function safeUnlinkPath(filePath: string): void {
-  try { unlinkSync(filePath); } catch { /* ignore */ }
+  try {
+    unlinkSync(filePath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    if (code && code !== 'ENOENT') {
+      log.warn('Failed to remove file during cleanup', {
+        filePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
 /**
