@@ -3,7 +3,8 @@
  *
  * Covers: run() routing, register command (success, already-registered, failure),
  * sync command (full, incremental, multi-page), inbox/sent (online + cached modes),
- * ack command, postEnvelopeToZmail (success, error), and ownership proof headers.
+ * ack/policy/allow/block commands, postEnvelopeToZmail (success, error),
+ * and ownership proof headers.
  * Uses mocked Session, fetch, and mailbox-store to avoid real I/O.
  */
 
@@ -733,6 +734,146 @@ describe('zmail ack command', () => {
     // Should NOT throw — ack already succeeded on server
     await run(session);
     expect(mockLog).toHaveBeenCalledWith('Acknowledged 1 message(s).');
+  });
+});
+
+// ============================================================================
+// Policy / Allow / Block Commands
+// ============================================================================
+
+describe('zmail policy command', () => {
+  it('shows current preferences', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        ai_id: 'principal',
+        message_policy_mode: 'allow_list',
+        allow_list: ['alice.ai'],
+        block_list: ['bob.ai'],
+      }),
+    });
+
+    const { session } = createTestSession(['policy', 'show']);
+    await run(session);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/v1/preferences/'),
+      expect.objectContaining({ method: 'GET' }),
+    );
+    expect(mockLog).toHaveBeenCalledWith('Message policy:');
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('allow_list'));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('alice.ai'));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('bob.ai'));
+  });
+
+  it('updates policy mode', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        ai_id: 'principal',
+        message_policy_mode: 'allow_list',
+        allow_list: [],
+        block_list: [],
+      }),
+    });
+
+    const { session } = createTestSession(['policy', 'set'], { mode: 'allow_list' });
+    await run(session);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/v1/preferences'),
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const call = mockFetch.mock.calls[0]!;
+    const body = JSON.parse(call[1].body as string);
+    expect(body.ai_id).toBe(session.getPrincipal());
+    expect(body.message_policy_mode).toBe('allow_list');
+  });
+});
+
+describe('zmail allow command', () => {
+  it('lists allowed sender ai ids', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        allow_list: ['alice.ai', 'carol.ai'],
+        block_list: [],
+      }),
+    });
+
+    const { session } = createTestSession(['allow', 'list']);
+    await run(session);
+
+    expect(mockLog).toHaveBeenCalledWith('Allow list: 2');
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('alice.ai'));
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('carol.ai'));
+  });
+
+  it('adds ai id to allow list and removes it from block list', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          allow_list: ['alice.ai'],
+          block_list: ['bob.ai'],
+          message_policy_mode: 'allow_list',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          allow_list: ['alice.ai', 'bob.ai'],
+          block_list: [],
+          message_policy_mode: 'allow_list',
+        }),
+      });
+
+    const { session } = createTestSession(['allow', 'add'], { 'ai-id': 'bob.ai' });
+    await run(session);
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const postCall = mockFetch.mock.calls[1]!;
+    const body = JSON.parse(postCall[1].body as string);
+    expect(body.allow_list).toEqual(['alice.ai', 'bob.ai']);
+    expect(body.block_list).toEqual([]);
+  });
+});
+
+describe('zmail block command', () => {
+  it('adds ai id to block list and removes it from allow list', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          allow_list: ['mallory.ai'],
+          block_list: ['bob.ai'],
+          message_policy_mode: 'all',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          allow_list: [],
+          block_list: ['bob.ai', 'mallory.ai'],
+          message_policy_mode: 'all',
+        }),
+      });
+
+    const { session } = createTestSession(['block', 'add'], { 'ai-id': 'mallory.ai' });
+    await run(session);
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const postCall = mockFetch.mock.calls[1]!;
+    const body = JSON.parse(postCall[1].body as string);
+    expect(body.allow_list).toEqual([]);
+    expect(body.block_list).toEqual(['bob.ai', 'mallory.ai']);
   });
 });
 

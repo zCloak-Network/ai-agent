@@ -285,6 +285,33 @@ export function aes256Encrypt(key: Buffer, plaintext: Uint8Array): Buffer {
 }
 
 /**
+ * Encrypt plaintext with AES-256-GCM and return detached parts.
+ *
+ * Unlike {@link aes256Encrypt}, this helper does not wrap the output in VKDA.
+ * It is used by Kind17 v2 mail content, which stores IV and ciphertext/tag
+ * separately inside a JSON payload.
+ */
+export function aes256GcmEncryptRaw(
+  key: Uint8Array,
+  plaintext: Uint8Array,
+  options: { iv?: Uint8Array; aad?: Uint8Array } = {},
+): { iv: Buffer; ciphertext: Buffer; tag: Buffer } {
+  const iv = options.iv ? Buffer.from(options.iv) : crypto.randomBytes(AES_GCM_NONCE_BYTES);
+  if (iv.length !== AES_GCM_NONCE_BYTES) {
+    throw encryptionError(`Invalid AES-GCM IV length: expected ${AES_GCM_NONCE_BYTES}, got ${iv.length}`);
+  }
+
+  const cipher = crypto.createCipheriv("aes-256-gcm", Buffer.from(key), iv);
+  if (options.aad) {
+    cipher.setAAD(Buffer.from(options.aad));
+  }
+
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return { iv, ciphertext, tag };
+}
+
+/**
  * Decrypt VKDA-formatted ciphertext using AES-256-GCM.
  *
  * Validates the VKDA magic header and version, then performs
@@ -333,6 +360,41 @@ export function aes256Decrypt(key: Buffer, data: Uint8Array): Buffer {
   } catch (e) {
     throw decryptionError(
       `AES-256-GCM decryption failed (authentication tag mismatch or corrupted data): ${e instanceof Error ? e.message : String(e)}`,
+      e,
+    );
+  }
+}
+
+/**
+ * Decrypt detached AES-256-GCM payload parts.
+ *
+ * Counterpart to {@link aes256GcmEncryptRaw}. The caller supplies the IV and
+ * authentication tag out-of-band instead of using VKDA framing.
+ */
+export function aes256GcmDecryptRaw(
+  key: Uint8Array,
+  ciphertext: Uint8Array,
+  iv: Uint8Array,
+  tag: Uint8Array,
+  options: { aad?: Uint8Array } = {},
+): Buffer {
+  if (iv.length !== AES_GCM_NONCE_BYTES) {
+    throw decryptionError(`Invalid AES-GCM IV length: expected ${AES_GCM_NONCE_BYTES}, got ${iv.length}`);
+  }
+  if (tag.length !== AES_GCM_TAG_BYTES) {
+    throw decryptionError(`Invalid AES-GCM tag length: expected ${AES_GCM_TAG_BYTES}, got ${tag.length}`);
+  }
+
+  try {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
+    if (options.aad) {
+      decipher.setAAD(Buffer.from(options.aad));
+    }
+    decipher.setAuthTag(Buffer.from(tag));
+    return Buffer.concat([decipher.update(Buffer.from(ciphertext)), decipher.final()]);
+  } catch (e) {
+    throw decryptionError(
+      `AES-256-GCM decryption failed: ${e instanceof Error ? e.message : String(e)}`,
       e,
     );
   }

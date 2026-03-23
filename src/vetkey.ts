@@ -32,7 +32,7 @@ import { daemonLogPath } from './paths.js';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { Principal } from '@dfinity/principal';
 import { schnorr } from '@noble/curves/secp256k1';
 import { hexToBytes, bytesToHex } from '@noble/hashes/utils';
@@ -143,7 +143,7 @@ function showHelp(): void {
   console.log('  grants-in       List grants you received (as grantee)');
   console.log('');
   console.log('Encrypted Messaging:');
-  console.log('  send-msg        Encrypt + auto-deliver via zMail (IBE)');
+  console.log('  send-msg        Encrypt + auto-deliver via zMail (Kind17 v2 by default)');
   console.log('  recv-msg        Decrypt a received message via Mail daemon');
   console.log('');
   console.log('Options:');
@@ -164,6 +164,7 @@ function showHelp(): void {
   console.log('  --reply=<msg_id>        Reply to a parent message (for send-msg)');
   console.log('  --data=<json>           Encrypted message JSON envelope (for recv-msg)');
   console.log('  --msg-id=<id>           Message ID to auto-fetch and decrypt (for recv-msg)');
+  console.log('  --kind17-version=<v>    Mail content version: v2 (default) or v1');
   console.log('  --no-zmail              Skip auto-POST to zMail (send-msg only)');
   console.log('  --zmail-url=<url>       Override zMail server URL');
 }
@@ -1192,8 +1193,23 @@ const MAX_MSG_PAYLOAD = 64 * 1024;
 /** Payload type indicator for encrypted messages */
 type MessagePayloadType = 'text' | 'file';
 
+/** Supported Kind17 mail content versions */
+type Kind17Version = 'v1' | 'v2';
+
 /** Tag entry in a Kind17 envelope: ["to", principal], ["payload_type", "text"], etc. */
 export type EnvelopeTag = [string, ...string[]];
+
+export interface Kind17ContentV2 {
+  v: 2;
+  type: MessagePayloadType;
+  alg: 'aes-256-gcm';
+  key_alg: 'vetkey-ibe';
+  ciphertext: string;
+  iv: string;
+  keys: Record<string, string>;
+}
+
+type Kind17Content = string | Kind17ContentV2;
 
 /**
  * Kind 17 envelope for encrypted messages — compatible with zMail protocol.
@@ -1214,11 +1230,35 @@ export interface Kind17Envelope {
   created_at: number;
   /** Tags carrying recipient and optional metadata */
   tags: EnvelopeTag[];
-  /** Encrypted content: JSON string per zmail-skill spec {"v":1,"type":"text"|"file","ct":"<base64>"} */
-  content: string;
+  /** Encrypted content in legacy v1 string form or structured v2 object form */
+  content: Kind17Content;
   /** BIP-340 Schnorr signature over the envelope ID */
   sig: string;
 }
+
+interface Kind17V1Content {
+  v: 1;
+  type: MessagePayloadType;
+  ct: string;
+}
+
+interface ParsedKind17ContentV1 {
+  version: 'v1';
+  payloadType: MessagePayloadType;
+  ciphertextBase64: string;
+  ibeIdentity: string;
+  filename?: string;
+}
+
+interface ParsedKind17ContentV2 {
+  version: 'v2';
+  payloadType: MessagePayloadType;
+  content: Kind17ContentV2;
+  wrappedKeyBase64: string;
+  filename?: string;
+}
+
+type ParsedKind17Content = ParsedKind17ContentV1 | ParsedKind17ContentV2;
 
 // ── Kind17 Envelope Helpers ──────────────────────────────────────────────────
 
@@ -1263,6 +1303,17 @@ function computeEnvelopeId(envelope: Omit<Kind17Envelope, 'id' | 'sig'>): string
   return createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex');
 }
 
+function kind17VersionFlag(session: Session): Kind17Version {
+  const raw = session.args['kind17-version'];
+  if (raw === undefined) {
+    return 'v2';
+  }
+  if (raw !== 'v1' && raw !== 'v2') {
+    throw new Error('Invalid --kind17-version value: expected "v1" or "v2"');
+  }
+  return raw;
+}
+
 /**
  * Extract the raw 32-byte secp256k1 private key from the session identity.
  * The Secp256k1KeyIdentity.toJSON() returns [publicKeyHex, privateKeyHex].
@@ -1289,6 +1340,47 @@ export function schnorrPubkeyFromSpki(spkiHex: string): string {
   return spkiHex.slice(SPKI_X_OFFSET, SPKI_X_OFFSET + SPKI_X_LENGTH);
 }
 
+function withSenderPubkeyTag(session: Session, tags: EnvelopeTag[]): EnvelopeTag[] {
+  if (getTagValue(tags, 'from_pubkey')) {
+    return tags;
+  }
+  const senderSpkiHex = Buffer.from(session.getIdentity().getPublicKey().toDer()).toString('hex');
+  return [...tags, ['from_pubkey', senderSpkiHex]];
+}
+
+interface EnvelopeCryptoContext {
+  kind: 17;
+  ai_id: string;
+  created_at: number;
+  tags: EnvelopeTag[];
+}
+
+function canonicalSerializeEnvelopeCryptoContext(context: EnvelopeCryptoContext): string {
+  return JSON.stringify(canonicalize({
+    kind: context.kind,
+    ai_id: context.ai_id,
+    created_at: context.created_at,
+    tags: context.tags,
+  }));
+}
+
+function buildKind17V2BodyAad(context: EnvelopeCryptoContext, payloadType: MessagePayloadType): Uint8Array {
+  return Buffer.from(
+    `${canonicalSerializeEnvelopeCryptoContext(context)}|body|${payloadType}|v2`,
+    'utf8',
+  );
+}
+
+function splitCiphertextAndTag(raw: Uint8Array): { ciphertext: Uint8Array; tag: Uint8Array } {
+  if (raw.length < 16) {
+    throw new Error('Invalid Kind17 v2 ciphertext: missing authentication tag');
+  }
+  return {
+    ciphertext: raw.slice(0, raw.length - 16),
+    tag: raw.slice(raw.length - 16),
+  };
+}
+
 /**
  * Build, sign, and return a complete Kind17 envelope.
  *
@@ -1304,16 +1396,11 @@ export function schnorrPubkeyFromSpki(spkiHex: string): string {
 function buildSignedEnvelope(
   session: Session,
   tags: EnvelopeTag[],
-  content: string,
+  content: Kind17Content,
+  createdAt: number = Math.floor(Date.now() / 1000),
 ): Kind17Envelope {
   const senderPrincipal = session.getPrincipal();
-  const createdAt = Math.floor(Date.now() / 1000);
-
-  // Include the sender's SPKI public key for receiver-side verification.
-  // This enables binding ai_id ↔ pubkey ↔ sig without registry lookups.
-  const senderIdentity = session.getIdentity();
-  const senderSpkiHex = Buffer.from(senderIdentity.getPublicKey().toDer()).toString('hex');
-  const allTags: EnvelopeTag[] = [...tags, ['from_pubkey', senderSpkiHex]];
+  const allTags = withSenderPubkeyTag(session, tags);
 
   // Compute the envelope ID from canonical serialization
   const partial = { kind: 17 as const, ai_id: senderPrincipal, created_at: createdAt, tags: allTags, content };
@@ -1359,6 +1446,11 @@ async function cmdSendMsg(session: Session): Promise<void> {
   }
 
   const { plaintext, payloadType, filename } = readMessageInput(text, file);
+  const kind17Version = kind17VersionFlag(session);
+  // Legacy Kind17 v1 generation is kept only for compatibility/debug comparison.
+  // The default zMail backend is the V2 endpoint, which is expected to reject
+  // newly sent v1 content with unsupported_content_version. Do not treat that
+  // as a regression in the upgraded path — v1 is on the deprecation path.
 
   // Resolve recipient principal from AI-ID (readable) or raw principal text.
   let recipientPrincipal: string | undefined;
@@ -1408,31 +1500,61 @@ async function cmdSendMsg(session: Session): Promise<void> {
     );
   }
 
-  // IBE-encrypt the plaintext for the recipient's Mail identity
-  const ciphertext = cryptoOps.ibeEncrypt(dpkBytes, ibeIdentity, plaintext);
-  const contentBase64 = Buffer.from(ciphertext).toString('base64');
-
-  // Wrap ciphertext in the standardized message composition format per zmail-skill spec.
-  // Shape: {"v":1,"type":"text"|"file","ct":"<base64-ciphertext>"}
-  // The outer Kind17 envelope carries routing metadata; only the body is encrypted.
-  const content = JSON.stringify({ v: 1, type: payloadType, ct: contentBase64 });
-
   // Build tags: recipient + metadata
-  const tags: EnvelopeTag[] = [
+  const baseTags: EnvelopeTag[] = [
     ['to', recipientPrincipal],
-    ['payload_type', payloadType],
-    ['ibe_id', ibeIdentity],
   ];
+  if (kind17Version === 'v1') {
+    baseTags.push(['payload_type', payloadType], ['ibe_id', ibeIdentity]);
+  }
   if (filename) {
-    tags.push(['filename', filename]);
+    baseTags.push(['filename', filename]);
   }
   // Include reply tag when responding to an existing message
   if (replyMsgId) {
-    tags.push(['reply', replyMsgId]);
+    baseTags.push(['reply', replyMsgId]);
   }
 
+  const createdAt = Math.floor(Date.now() / 1000);
+  const envelopeTags = withSenderPubkeyTag(session, baseTags);
+  const senderPrincipal = session.getPrincipal();
+  const content = kind17Version === 'v1'
+    ? buildKind17V1Content(dpkBytes, ibeIdentity, plaintext, payloadType)
+    : buildKind17V2Content(
+      dpkBytes,
+      senderPrincipal,
+      recipientPrincipal,
+      plaintext,
+      payloadType,
+      {
+        kind: 17,
+        ai_id: senderPrincipal,
+        created_at: createdAt,
+        tags: envelopeTags,
+      },
+    );
+  log.debug('send-msg envelope prepared', {
+    kind17Version,
+    senderPrincipal,
+    recipientPrincipal,
+    payloadType,
+    plaintextSize: plaintext.length,
+    hasFilename: Boolean(filename),
+    hasReply: Boolean(replyMsgId),
+    contentType: typeof content,
+  });
+
   // Build and sign the Kind17 envelope
-  const envelope = buildSignedEnvelope(session, tags, content);
+  const envelope = buildSignedEnvelope(session, envelopeTags, content, createdAt);
+  log.debug('send-msg envelope signed', {
+    msgId: envelope.id,
+    createdAt,
+    tagKeys: envelope.tags.map(([key]) => key),
+    contentVersion:
+      typeof envelope.content === 'string'
+        ? 'v1-string'
+        : `v${String((envelope.content as { v?: unknown }).v ?? 'unknown')}-object`,
+  });
 
   // Output the envelope as JSON (always JSON for machine consumption)
   console.log(JSON.stringify(envelope));
@@ -1448,6 +1570,12 @@ async function cmdSendMsg(session: Session): Promise<void> {
         : (zmailUrlEnv && zmailUrlEnv.length > 0)
           ? zmailUrlEnv.replace(/\/+$/, '')
           : (await import('./config.js')).default.zmail_url;
+      log.debug('send-msg auto-deliver start', {
+        zmailUrl,
+        msgId: envelope.id,
+        recipientPrincipal,
+        kind17Version,
+      });
 
       const { postEnvelopeToZmail } = await import('./zmail.js');
       const result = await postEnvelopeToZmail(zmailUrl, envelope);
@@ -1456,6 +1584,63 @@ async function cmdSendMsg(session: Session): Promise<void> {
       log.error(`zMail: delivery failed — ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+}
+
+function buildKind17V1Content(
+  dpkBytes: Uint8Array,
+  ibeIdentity: string,
+  plaintext: Uint8Array,
+  payloadType: MessagePayloadType,
+): string {
+  // Deprecated compatibility format:
+  // v1 wraps a single IBE ciphertext in a JSON string body. It is retained so
+  // recv-msg can continue to read historical mail and so send-side output can
+  // still be compared during migration work, but new delivery is expected to
+  // move to Kind17 v2 only.
+  const ciphertext = cryptoOps.ibeEncrypt(dpkBytes, ibeIdentity, plaintext);
+  const content: Kind17V1Content = {
+    v: 1,
+    type: payloadType,
+    ct: Buffer.from(ciphertext).toString('base64'),
+  };
+  return JSON.stringify(content);
+}
+
+function buildKind17V2Content(
+  dpkBytes: Uint8Array,
+  senderPrincipal: string,
+  recipientPrincipal: string,
+  plaintext: Uint8Array,
+  payloadType: MessagePayloadType,
+  context: EnvelopeCryptoContext,
+): Kind17ContentV2 {
+  const bodyKey = randomBytes(32);
+  const body = cryptoOps.aes256GcmEncryptRaw(
+    bodyKey,
+    plaintext,
+    { aad: buildKind17V2BodyAad(context, payloadType) },
+  );
+  const readers = [...new Set([senderPrincipal, recipientPrincipal])];
+  const keys: Record<string, string> = {};
+
+  for (const reader of readers) {
+    const wrappedKeyCiphertext = cryptoOps.ibeEncrypt(
+      dpkBytes,
+      `${reader}:Mail`,
+      bodyKey,
+    );
+    keys[reader] = Buffer.from(wrappedKeyCiphertext).toString('base64');
+  }
+
+  return {
+    v: 2,
+    type: payloadType,
+    alg: 'aes-256-gcm',
+    key_alg: 'vetkey-ibe',
+    ciphertext: Buffer.concat([body.ciphertext, body.tag]).toString('base64'),
+    iv: body.iv.toString('base64'),
+    keys,
+  };
 }
 
 /**
@@ -1536,12 +1721,12 @@ async function cmdRecvMsg(session: Session): Promise<void> {
   // Parse and validate the Kind17 envelope
   const envelope = parseKind17Envelope(dataStr);
   const principal = session.getPrincipal();
-  const derivationId = `${principal}:Mail`;
-
-  // Extract metadata from tags
-  const ibeId = getTagValue(envelope.tags, 'ibe_id') ?? derivationId;
-  const payloadType = (getTagValue(envelope.tags, 'payload_type') ?? 'text') as MessagePayloadType;
-  const filename = getTagValue(envelope.tags, 'filename');
+  log.debug('recv-msg envelope parsed', {
+    msgId: envelope.id,
+    from: envelope.ai_id,
+    createdAt: envelope.created_at,
+    contentType: typeof envelope.content,
+  });
 
   // Verify this envelope is addressed to us
   const recipients = envelope.tags.filter(t => t[0] === 'to').map(t => t[1]);
@@ -1554,63 +1739,27 @@ async function cmdRecvMsg(session: Session): Promise<void> {
   // Verify envelope integrity and sender authentication.
   // Returns true only if full Schnorr signature + principal binding was verified.
   const verifiedSender = verifyKind17Signature(envelope);
-
-  // Extract the IBE ciphertext from the content field.
-  // Content follows the zmail-skill message composition spec:
-  // {"v":1,"type":"text"|"file","ct":"<base64-ciphertext>"}
-  let ciphertextBase64: string;
-  try {
-    const parsed = JSON.parse(envelope.content) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== 'object' || parsed.v !== 1 || typeof parsed.ct !== 'string') {
-      throw new Error('Invalid message composition format: missing v=1 or ct field');
-    }
-    // Validate type field exists and matches one of the allowed payload types
-    if (parsed.type !== 'text' && parsed.type !== 'file') {
-      throw new Error(
-        `Invalid message composition format: type must be "text" or "file", got "${String(parsed.type)}"`,
-      );
-    }
-    // Verify consistency between the composition type and the envelope payload_type tag
-    if (parsed.type !== payloadType) {
-      throw new Error(
-        `Message composition type "${parsed.type}" does not match envelope payload_type tag "${payloadType}"`,
-      );
-    }
-    ciphertextBase64 = parsed.ct;
-  } catch (e) {
-    if (e instanceof SyntaxError) {
-      throw new Error('Invalid message composition format: content is not valid JSON');
-    }
-    throw e;
-  }
-
-  const mailDerivationId = `${principal}:Mail`;
+  const parsedContent = parseKind17MessageContent(envelope, principal);
+  const payloadType = parsedContent.payloadType;
+  const filename = parsedContent.filename;
+  log.debug('recv-msg content parsed', {
+    msgId: envelope.id,
+    version: parsedContent.version,
+    payloadType,
+    hasFilename: Boolean(filename),
+    verifiedSender,
+  });
   await ensureDaemonReadyForRecvMsg(principal);
 
-  const sockPath = socketPath(principal);
-  const response = await sendRpcToSocket(sockPath, {
-    id: 1,
-    method: 'ibe-decrypt',
-    params: {
-      ibe_identity: ibeId,
-      ciphertext_base64: ciphertextBase64,
-    },
+  const plaintextBytes = parsedContent.version === 'v1'
+    ? await decryptKind17V1Content(principal, parsedContent)
+    : await decryptKind17V2Content(principal, envelope, parsedContent);
+  log.debug('recv-msg decrypt complete', {
+    msgId: envelope.id,
+    version: parsedContent.version,
+    plaintextSize: plaintextBytes.length,
+    outputMode: output ? 'file' : payloadType === 'file' ? 'auto-file' : 'stdout',
   });
-
-  if (response.error) {
-    throw new Error(`Daemon decryption failed: ${response.error}`);
-  }
-
-  const result = response.result as { data_base64: string; plaintext_size: number };
-  if (!result || typeof result.data_base64 !== 'string' || typeof result.plaintext_size !== 'number') {
-    throw new Error('Daemon returned an invalid decrypt result');
-  }
-  const plaintextBytes = decodeBase64Strict(result.data_base64, 'daemon data_base64');
-  if (plaintextBytes.length !== result.plaintext_size) {
-    throw new Error(
-      `Daemon returned mismatched plaintext size: expected ${result.plaintext_size}, got ${plaintextBytes.length}`,
-    );
-  }
 
   // Determine output target
   const shouldWriteFile = payloadType === 'file' || !!output;
@@ -1630,7 +1779,7 @@ async function cmdRecvMsg(session: Session): Promise<void> {
       payload_type: payloadType,
       filename,
       verified_sender: verifiedSender,
-      plaintext_size: result.plaintext_size,
+      plaintext_size: plaintextBytes.length,
       timestamp: envelope.created_at,
     };
     if (resolvedOutput) {
@@ -1646,7 +1795,7 @@ async function cmdRecvMsg(session: Session): Promise<void> {
     console.log(`  Payload Type: ${payloadType}`);
     if (filename) console.log(`  File Name:    ${filename}`);
     console.log(`  Time:         ${new Date(envelope.created_at * 1000).toISOString()}`);
-    console.log(`  Size:         ${result.plaintext_size} bytes`);
+    console.log(`  Size:         ${plaintextBytes.length} bytes`);
     console.log(`  Output File:  ${resolvedOutput}`);
   } else {
     console.log('Decrypted message:');
@@ -1655,10 +1804,210 @@ async function cmdRecvMsg(session: Session): Promise<void> {
     console.log(`  Verified:     ${verifiedSender ? 'yes' : 'id-only'}`);
     console.log(`  Payload Type: ${payloadType}`);
     console.log(`  Time:         ${new Date(envelope.created_at * 1000).toISOString()}`);
-    console.log(`  Size:         ${result.plaintext_size} bytes`);
+    console.log(`  Size:         ${plaintextBytes.length} bytes`);
     console.log('  Content:');
     console.log(plaintextBytes.toString('utf-8'));
   }
+}
+
+function parseKind17MessageContent(
+  envelope: Kind17Envelope,
+  readerPrincipal: string,
+): ParsedKind17Content {
+  const filename = getTagValue(envelope.tags, 'filename');
+  const legacyPayloadType = getTagValue(envelope.tags, 'payload_type');
+  const legacyIbeIdentity = getTagValue(envelope.tags, 'ibe_id');
+
+  if (typeof envelope.content === 'string') {
+    log.debug('recv-msg parsing legacy string content', {
+      msgId: envelope.id,
+      readerPrincipal,
+      contentLength: envelope.content.length,
+    });
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(envelope.content) as Record<string, unknown>;
+    } catch {
+      throw new Error('Invalid message composition format: content is not valid JSON');
+    }
+
+    if (!parsed || typeof parsed !== 'object' || parsed.v !== 1 || typeof parsed.ct !== 'string') {
+      throw new Error('Invalid message composition format: missing v=1 or ct field');
+    }
+    if (parsed.type !== 'text' && parsed.type !== 'file') {
+      throw new Error(
+        `Invalid message composition format: type must be "text" or "file", got "${String(parsed.type)}"`,
+      );
+    }
+    if (legacyPayloadType && parsed.type !== legacyPayloadType) {
+      throw new Error(
+        `Message composition type "${parsed.type}" does not match envelope payload_type tag "${legacyPayloadType}"`,
+      );
+    }
+    if (!legacyIbeIdentity) {
+      throw new Error('Legacy Kind17 v1 message is missing required ibe_id tag');
+    }
+    return {
+      version: 'v1',
+      payloadType: parsed.type,
+      ciphertextBase64: parsed.ct,
+      ibeIdentity: legacyIbeIdentity,
+      filename,
+    };
+  }
+
+  const parsed = envelope.content;
+  log.debug('recv-msg parsing structured object content', {
+    msgId: envelope.id,
+    readerPrincipal,
+    contentVersion: (parsed as { v?: unknown }).v ?? null,
+  });
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Invalid Kind17 content: expected a string or object');
+  }
+  if (parsed.v !== 2) {
+    throw new Error(`Unsupported Kind17 content version: ${String((parsed as { v?: unknown }).v)}`);
+  }
+  if (parsed.type !== 'text' && parsed.type !== 'file') {
+    throw new Error(
+      `Invalid Kind17 v2 content type: expected "text" or "file", got "${String(parsed.type)}"`,
+    );
+  }
+  if (parsed.alg !== 'aes-256-gcm') {
+    throw new Error(`Unsupported Kind17 v2 body algorithm: ${String(parsed.alg)}`);
+  }
+  if (parsed.key_alg !== 'vetkey-ibe') {
+    throw new Error(`Unsupported Kind17 v2 key algorithm: ${String(parsed.key_alg)}`);
+  }
+  if (typeof parsed.iv !== 'string' || typeof parsed.ciphertext !== 'string') {
+    throw new Error('Invalid Kind17 v2 content: missing iv or ciphertext');
+  }
+  if (!parsed.keys || typeof parsed.keys !== 'object' || Array.isArray(parsed.keys)) {
+    throw new Error('Invalid Kind17 v2 content: keys must be an object');
+  }
+
+  const wrappedKeyBase64 = (parsed.keys as Record<string, unknown>)[readerPrincipal];
+  if (typeof wrappedKeyBase64 !== 'string' || wrappedKeyBase64.length === 0) {
+    throw new Error(`Kind17 v2 content does not contain a wrapped key for reader "${readerPrincipal}"`);
+  }
+
+  return {
+    version: 'v2',
+    payloadType: parsed.type,
+    content: parsed as Kind17ContentV2,
+    wrappedKeyBase64,
+    filename,
+  };
+}
+
+async function decryptKind17V1Content(
+  principal: string,
+  parsed: ParsedKind17ContentV1,
+): Promise<Buffer> {
+  // Legacy receive path for historical inbox content. This stays read-only
+  // compatible while v1 send support is being phased out.
+  const response = await sendRpcToSocket(socketPath(principal), {
+    id: 1,
+    method: 'ibe-decrypt',
+    params: {
+      ibe_identity: parsed.ibeIdentity,
+      ciphertext_base64: parsed.ciphertextBase64,
+    },
+  });
+
+  if (response.error) {
+    throw new Error(`Daemon decryption failed: ${response.error}`);
+  }
+
+  const result = response.result as { data_base64: string; plaintext_size: number };
+  if (!result || typeof result.data_base64 !== 'string' || typeof result.plaintext_size !== 'number') {
+    throw new Error('Daemon returned an invalid decrypt result');
+  }
+  const plaintextBytes = decodeBase64Strict(result.data_base64, 'daemon data_base64');
+  if (plaintextBytes.length !== result.plaintext_size) {
+    throw new Error(
+      `Daemon returned mismatched plaintext size: expected ${result.plaintext_size}, got ${plaintextBytes.length}`,
+    );
+  }
+  log.debug('recv-msg v1 decrypt result', {
+    principal,
+    plaintextSize: plaintextBytes.length,
+    ibeIdentity: parsed.ibeIdentity,
+  });
+  return plaintextBytes;
+}
+
+async function decryptKind17V2Content(
+  principal: string,
+  envelope: Kind17Envelope,
+  parsed: ParsedKind17ContentV2,
+): Promise<Buffer> {
+  log.debug('recv-msg v2 wrapped-key decrypt start', {
+    msgId: envelope.id,
+    principal,
+  });
+  const wrappedKeyResponse = await sendRpcToSocket(socketPath(principal), {
+    id: 1,
+    method: 'ibe-decrypt',
+    params: {
+      ibe_identity: `${principal}:Mail`,
+      ciphertext_base64: parsed.wrappedKeyBase64,
+    },
+  });
+
+  if (wrappedKeyResponse.error) {
+    throw new Error(`Daemon decryption failed: ${wrappedKeyResponse.error}`);
+  }
+
+  const wrappedKeyResult = wrappedKeyResponse.result as { data_base64: string; plaintext_size: number };
+  if (
+    !wrappedKeyResult
+    || typeof wrappedKeyResult.data_base64 !== 'string'
+    || typeof wrappedKeyResult.plaintext_size !== 'number'
+  ) {
+    throw new Error('Daemon returned an invalid wrapped-key decrypt result');
+  }
+
+  const bodyKey = decodeBase64Strict(wrappedKeyResult.data_base64, 'daemon data_base64');
+  if (bodyKey.length !== wrappedKeyResult.plaintext_size) {
+    throw new Error(
+      `Daemon returned mismatched wrapped-key size: expected ${wrappedKeyResult.plaintext_size}, got ${bodyKey.length}`,
+    );
+  }
+  log.debug('recv-msg v2 wrapped-key decrypt result', {
+    msgId: envelope.id,
+    principal,
+    wrappedKeySize: bodyKey.length,
+  });
+
+  const iv = decodeBase64Strict(parsed.content.iv, 'content.iv');
+  const rawCiphertext = decodeBase64Strict(parsed.content.ciphertext, 'content.ciphertext');
+  const { ciphertext, tag } = splitCiphertextAndTag(rawCiphertext);
+  const plaintext = cryptoOps.aes256GcmDecryptRaw(
+    bodyKey,
+    ciphertext,
+    iv,
+    tag,
+    {
+      aad: buildKind17V2BodyAad(
+        {
+          kind: 17,
+          ai_id: envelope.ai_id,
+          created_at: envelope.created_at,
+          tags: envelope.tags,
+        },
+        parsed.payloadType,
+      ),
+    },
+  );
+  log.debug('recv-msg v2 body decrypt result', {
+    msgId: envelope.id,
+    principal,
+    ivSize: iv.length,
+    ciphertextSize: ciphertext.length,
+    plaintextSize: plaintext.length,
+  });
+  return plaintext;
 }
 
 // ── Message Input Parsing ────────────────────────────────────────────────────
@@ -1731,8 +2080,12 @@ function parseKind17Envelope(dataStr: string): Kind17Envelope {
   if (!Array.isArray(e.tags)) {
     throw new Error('Invalid envelope: tags must be an array');
   }
-  if (typeof e.content !== 'string' || e.content.length === 0) {
-    throw new Error('Invalid envelope: content must be a non-empty string');
+  const contentValid = (
+    (typeof e.content === 'string' && e.content.length > 0)
+    || (e.content !== null && typeof e.content === 'object' && !Array.isArray(e.content))
+  );
+  if (!contentValid) {
+    throw new Error('Invalid envelope: content must be a non-empty string or object');
   }
   if (typeof e.sig !== 'string' || e.sig.length === 0) {
     throw new Error('Invalid envelope: sig must be a non-empty string');
@@ -1752,7 +2105,7 @@ function parseKind17Envelope(dataStr: string): Kind17Envelope {
     ai_id: e.ai_id,
     created_at: e.created_at,
     tags: e.tags as EnvelopeTag[],
-    content: e.content,
+    content: e.content as Kind17Content,
     sig: e.sig,
   };
 }

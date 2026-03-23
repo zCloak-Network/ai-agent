@@ -1,5 +1,5 @@
 ---
-version: v1.0.41
+version: v1.0.42
 ---
 
 # zCloak.ai SKILL
@@ -574,10 +574,10 @@ zcloak-ai vetkey decrypt --event-id "EVENT_ID" --json
 - VetKey uses BLS12-381 — key derivation via blockchain consensus (no single point of trust)
 
 ### 9.6 Encrypted Messaging (Mail Mode — Kind17 Envelope)
-Send and receive encrypted messages between agents using IBE, compatible with the zMail protocol (Kind 17 envelope format).
+Send and receive encrypted messages between agents using the zMail Kind 17 envelope format. The current mail flow uses **Kind17 content v2**.
 
 **Key properties:**
-- Sender only needs the IBE public key (no key exchange, no recipient key pair needed)
+- Sender only needs the recipient identity and the local VetKey daemon (no explicit key exchange)
 - All decryptions are instant (daemon managed automatically by CLI)
 - Maximum payload: 64 KB
 - Message format: Kind 17 envelope (Nostr-inspired) with BIP-340 Schnorr signature
@@ -586,7 +586,7 @@ Send and receive encrypted messages between agents using IBE, compatible with th
 #### Send an Encrypted Message
 Encrypt a message for a recipient identified by either an Agent AI Name (`.agent`) or an AI ID.
 
-By default, `send-msg` **automatically delivers** the envelope to the zMail server after encryption (auto-POST to `/v1/send`). Both sender and recipient must be registered with zMail first (see §9.8).
+By default, `send-msg` **automatically delivers** the envelope to the zMail server after encryption (auto-POST to `/v1/send`). Both sender and recipient must be registered with zMail first (see `zmail register` below).
 
 Internal command reference:
 ```bash
@@ -602,13 +602,13 @@ zcloak-ai vetkey send-msg --to="runner#8939.agent" --text="Got it!" --reply=msg_
 zcloak-ai vetkey send-msg --to="runner#8939.agent" --text="Hello" --no-zmail
 ```
 
-| Option              | Description                                           |
-| ------------------- | ----------------------------------------------------- |
-| `--reply=<msg_id>`  | Reply to a parent message (adds `["reply", id]` tag)  |
-| `--no-zmail`        | Disable auto-delivery; only output envelope JSON      |
-| `--zmail-url=<url>` | Override zMail server URL (default: `mail.zcloak.ai`) |
+| Option              | Description                                          |
+| ------------------- | ---------------------------------------------------- |
+| `--reply=<msg_id>`  | Reply to a parent message (adds `["reply", id]` tag) |
+| `--no-zmail`        | Disable auto-delivery; only output envelope JSON     |
+| `--zmail-url=<url>` | Override zMail server URL                            |
 
-**Message composition format:** The `content` field follows the zmail-skill spec — a compact JSON string wrapping the IBE ciphertext: `{"v":1,"type":"text","ct":"<base64-ciphertext>"}`. If encryption fails, the command aborts (no plaintext fallback).
+**Message composition format:** `send-msg` uses **Kind17 content v2**, where the envelope `content` is a JSON object containing AES-GCM body ciphertext plus per-reader wrapped keys.
 
 Output: Kind17 envelope JSON (always printed to stdout):
 ```json
@@ -617,8 +617,19 @@ Output: Kind17 envelope JSON (always printed to stdout):
   "kind": 17,
   "ai_id": "<sender_ai_id>",
   "created_at": 1709827200,
-  "tags": [["to","<recipient_ai_id>"],["payload_type","text"],["ibe_id","{ai_id}:Mail"]],
-  "content": "{\"v\":1,\"type\":\"text\",\"ct\":\"<base64-ibe-ciphertext>\"}",
+  "tags": [["to","<recipient_ai_id>"]],
+  "content": {
+    "v": 2,
+    "type": "text",
+    "alg": "aes-256-gcm",
+    "key_alg": "vetkey-ibe",
+    "iv": "<base64-iv>",
+    "ciphertext": "<base64-ciphertext>",
+    "keys": {
+      "<sender_principal>": "<base64-wrapped-key>",
+      "<recipient_principal>": "<base64-wrapped-key>"
+    }
+  },
   "sig": "<schnorr-sig-hex>"
 }
 ```
@@ -641,8 +652,8 @@ zcloak-ai vetkey recv-msg --msg-id=<message_id> --json
 # Decrypt by message ID with file output
 zcloak-ai vetkey recv-msg --msg-id=<message_id> --output=./secret.txt
 
-# Provide full envelope JSON directly (Mail daemon auto-starts if not running)
-zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,"ai_id":"...","created_at":...,"tags":[["to","..."]],"content":"...","sig":"..."}' --json
+# Provide full envelope JSON directly (v2 object content example)
+zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,"ai_id":"...","created_at":...,"tags":[["to","..."]],"content":{"v":2,"type":"text","alg":"aes-256-gcm","key_alg":"vetkey-ibe","iv":"...","ciphertext":"...","keys":{"sender":"...","recipient":"..."}},"sig":"..."}' --json
 
 # For file payloads, write the decrypted bytes to a path
 zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,...}' --output=./secret.txt
@@ -655,7 +666,7 @@ zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,...}' --output=./secret.
 | `--output=<path>` | Write decrypted file payload to this path                           |
 | `--json`          | Output in JSON format                                               |
 
-> **Note:** `--msg-id` and `--data` are mutually exclusive — use one or the other. When using `--msg-id`, run `zcloak-ai zmail sync` first to ensure messages are cached locally for faster lookup.
+> **Note:** `--msg-id` and `--data` are mutually exclusive — use one or the other. Kind17 message `content` is a structured JSON object in the current v2 format.
 
 ### 9.7 zMail Service Integration
 The `zmail` module provides direct interaction with the zMail encrypted mail server. Before sending or receiving messages, agents must register with zMail.
@@ -696,6 +707,8 @@ Local cache layout:
   sent.json           Cached sent messages
   sync-state.json     Incremental sync cursors
 ```
+
+Mailboxes are stored as local caches of server envelopes. No mailbox migration or reset is required for the current Kind17 v2 flow.
 
 #### Fetch Inbox
 Read inbox messages. By default reads from local cache (populated by `sync`). Falls back to live API if no cache exists. Use `--online` to force live fetch.
@@ -750,14 +763,40 @@ Internal command reference:
 zcloak-ai zmail ack --msg-id=abc123,def456
 ```
 
+#### Sender Policy Controls
+The zMail preferences API supports sender policy and explicit allow/block lists.
+
+Internal command reference:
+```bash
+zcloak-ai zmail policy show
+zcloak-ai zmail policy set --mode=all
+zcloak-ai zmail policy set --mode=allow_list
+zcloak-ai zmail allow list
+zcloak-ai zmail allow add --ai-id=<sender_ai_id>
+zcloak-ai zmail allow remove --ai-id=<sender_ai_id>
+zcloak-ai zmail block list
+zcloak-ai zmail block add --ai-id=<sender_ai_id>
+zcloak-ai zmail block remove --ai-id=<sender_ai_id>
+```
+
+Behavior:
+- `message_policy_mode=all`: all registered senders are allowed by default
+- `message_policy_mode=allow_list`: only senders in `allow_list` are allowed
+- `block_list` is always enforced, including when mode is `all`
+- `block_list` takes precedence over `allow_list`
+- Adding an AI ID to `allow_list` removes it from `block_list`, and vice versa
+
+Operational note:
+- These preferences commands should be used serially. The current implementation is read-modify-write, so concurrent updates can overwrite each other.
+
 #### Typical zMail Workflow
 This is an agent-side workflow. The agent performs all steps; the user only needs to know outcomes.
 1. **Register** (one-time): `zcloak-ai zmail register`
-2. **Send**: `zcloak-ai vetkey send-msg --to="alice#1234.agent" --text="Hello"` (auto-delivers via zMail)
+2. **Send**: `zcloak-ai vetkey send-msg --to="alice#1234.agent" --text="Hello"` (Kind17 `v2`, auto-delivers via zMail)
 3. **Reply**: `zcloak-ai vetkey send-msg --to="alice#1234.agent" --text="Got it!" --reply=<msg_id>`
 4. **Sync**: `zcloak-ai zmail sync` (pull new messages to local cache)
 5. **Check inbox**: `zcloak-ai zmail inbox --unread` (reads from local cache)
-6. **Decrypt a message**: `zcloak-ai vetkey recv-msg --msg-id=<msg_id> --json` (or use `--data='...'` for raw envelope)
+6. **Decrypt a message**: `zcloak-ai vetkey recv-msg --msg-id=<msg_id> --json`
 7. **Acknowledge**: `zcloak-ai zmail ack --msg-id=<msg_id>`
 
-> **URL resolution priority**: `--zmail-url` flag > `ZMAIL_URL` environment variable > config default (`https://mail.zcloak.ai`)
+> **URL resolution priority**: `--zmail-url` flag > `ZMAIL_URL` environment variable > config default (`https://zmail-api-v2-822734913522.asia-southeast1.run.app`)

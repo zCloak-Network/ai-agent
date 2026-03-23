@@ -22,12 +22,20 @@ const {
   mockIsDaemonAlive,
   mockSocketPath,
   mockIbeEncrypt,
+  mockAes256GcmEncryptRaw,
+  mockAes256GcmDecryptRaw,
 } = vi.hoisted(() => ({
   mockCreateConnection: vi.fn(),
   mockCreateInterface: vi.fn(({ input }: { input: EventEmitter }) => input),
   mockIsDaemonAlive: vi.fn(() => true),
   mockSocketPath: vi.fn(() => '/tmp/mail.sock'),
   mockIbeEncrypt: vi.fn(() => new Uint8Array([1, 2, 3, 4])),
+  mockAes256GcmEncryptRaw: vi.fn(() => ({
+    iv: Buffer.alloc(12, 7),
+    ciphertext: Buffer.from('body-ciphertext', 'utf8'),
+    tag: Buffer.from('1234567890abcdef', 'utf8'),
+  })),
+  mockAes256GcmDecryptRaw: vi.fn(() => Buffer.from('decrypted-v2', 'utf8')),
 }));
 
 let daemonResponse: Record<string, unknown>;
@@ -51,6 +59,8 @@ vi.mock('../crypto.js', async (importOriginal) => {
   return {
     ...actual,
     ibeEncrypt: mockIbeEncrypt,
+    aes256GcmEncryptRaw: mockAes256GcmEncryptRaw,
+    aes256GcmDecryptRaw: mockAes256GcmDecryptRaw,
   };
 });
 
@@ -142,7 +152,7 @@ describe('vetkey encrypted messaging', () => {
     const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
     const session = mockSession(
       ['send-msg'],
-      { to: recipient, text: 'hello mail', 'no-zmail': true },
+      { to: recipient, text: 'hello mail', 'no-zmail': true, 'kind17-version': 'v1' },
       sender,
     );
 
@@ -181,13 +191,55 @@ describe('vetkey encrypted messaging', () => {
     expect(envelope.ts).toBeUndefined();
   });
 
+  it('send-msg emits Kind17 v2 content by default', async () => {
+    const sender = Secp256k1KeyIdentity.generate();
+    const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
+    const session = mockSession(
+      ['send-msg'],
+      { to: recipient, text: 'hello v2', 'no-zmail': true },
+      sender,
+    );
+
+    await run(session);
+
+    const envelope = readLastJsonLog();
+    expect(envelope.kind).toBe(17);
+    expect(typeof envelope.content).toBe('object');
+    expect(envelope.content).toMatchObject({
+      v: 2,
+      type: 'text',
+      alg: 'aes-256-gcm',
+      key_alg: 'vetkey-ibe',
+    });
+    const content = envelope.content as Record<string, unknown>;
+    expect(content.iv).toBe(Buffer.alloc(12, 7).toString('base64'));
+    expect(content.ciphertext).toBe(
+      Buffer.concat([
+        Buffer.from('body-ciphertext', 'utf8'),
+        Buffer.from('1234567890abcdef', 'utf8'),
+      ]).toString('base64'),
+    );
+    expect(content.keys).toEqual({
+      [sender.getPrincipal().toText()]: 'AQIDBA==',
+      [recipient]: 'AQIDBA==',
+    });
+
+    const tags = envelope.tags as string[][];
+    expect(tags).toEqual(expect.arrayContaining([
+      ['to', recipient],
+      ['from_pubkey', Buffer.from(sender.getPublicKey().toDer()).toString('hex')],
+    ]));
+    expect(tags.some((entry) => entry[0] === 'payload_type')).toBe(false);
+    expect(tags.some((entry) => entry[0] === 'ibe_id')).toBe(false);
+  });
+
   it('send-msg includes reply tag when --reply is provided', async () => {
     const sender = Secp256k1KeyIdentity.generate();
     const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
     const parentMsgId = 'msg_parent_abc123';
     const session = mockSession(
       ['send-msg'],
-      { to: recipient, text: 'this is a reply', reply: parentMsgId, 'no-zmail': true },
+      { to: recipient, text: 'this is a reply', reply: parentMsgId, 'no-zmail': true, 'kind17-version': 'v1' },
       sender,
     );
 
@@ -205,7 +257,7 @@ describe('vetkey encrypted messaging', () => {
     const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
     const session = mockSession(
       ['send-msg'],
-      { to: recipient, text: 'no reply', 'no-zmail': true },
+      { to: recipient, text: 'no reply', 'no-zmail': true, 'kind17-version': 'v1' },
       sender,
     );
 
@@ -222,7 +274,7 @@ describe('vetkey encrypted messaging', () => {
     const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
     const session = mockSession(
       ['send-msg'],
-      { to: recipient, text: 'reply to nothing', reply: '', 'no-zmail': true },
+      { to: recipient, text: 'reply to nothing', reply: '', 'no-zmail': true, 'kind17-version': 'v1' },
       sender,
     );
 
@@ -233,11 +285,11 @@ describe('vetkey encrypted messaging', () => {
     const sender = Secp256k1KeyIdentity.generate();
     const session = mockSession(
       ['send-msg'],
-      { to: 'not-a-principal', text: 'hello mail' },
+      { to: 'not-a-principal', text: 'hello mail', 'kind17-version': 'v1' },
       sender,
     );
 
-    await expect(run(session)).rejects.toThrow('Invalid recipient principal');
+    await expect(run(session)).rejects.toThrow('Cannot resolve AI-Name');
   });
 
   it('send-msg rejects text payloads larger than 64 KB', async () => {
@@ -245,11 +297,59 @@ describe('vetkey encrypted messaging', () => {
     const recipient = Secp256k1KeyIdentity.generate().getPrincipal().toText();
     const session = mockSession(
       ['send-msg'],
-      { to: recipient, text: 'a'.repeat(64 * 1024 + 1) },
+      { to: recipient, text: 'a'.repeat(64 * 1024 + 1), 'kind17-version': 'v1' },
       sender,
     );
 
     await expect(run(session)).rejects.toThrow('Message too large');
+  });
+
+  it('recv-msg decrypts Kind17 v2 content by default', async () => {
+    const sender = Secp256k1KeyIdentity.generate();
+    const recipient = Secp256k1KeyIdentity.generate();
+    const recipientPrincipal = recipient.getPrincipal().toText();
+
+    const sendSession = mockSession(
+      ['send-msg'],
+      { to: recipientPrincipal, text: 'hello new world', 'no-zmail': true },
+      sender,
+    );
+
+    await run(sendSession);
+    const envelope = readLastJsonLog();
+
+    const wrappedBodyKey = Buffer.alloc(32, 5);
+    daemonResponse = {
+      id: 1,
+      result: {
+        data_base64: wrappedBodyKey.toString('base64'),
+        plaintext_size: wrappedBodyKey.length,
+      },
+    };
+    mockAes256GcmDecryptRaw.mockReturnValueOnce(Buffer.from('hello new world', 'utf8'));
+    mockLog.mockClear();
+
+    const recvSession = mockSession(
+      ['recv-msg'],
+      { data: JSON.stringify(envelope), json: true },
+      recipient,
+    );
+
+    await run(recvSession);
+
+    expect(lastSocketRequest).toEqual({
+      id: 1,
+      method: 'ibe-decrypt',
+      params: {
+        ibe_identity: `${recipientPrincipal}:Mail`,
+        ciphertext_base64: 'AQIDBA==',
+      },
+    });
+
+    const result = readLastJsonLog();
+    expect(result.payload_type).toBe('text');
+    expect(result.plaintext).toBe('hello new world');
+    expect(result.verified_sender).toBe(true);
   });
 
   it('recv-msg writes file payloads to disk when output is provided', async () => {
@@ -264,7 +364,7 @@ describe('vetkey encrypted messaging', () => {
 
     const sendSession = mockSession(
       ['send-msg'],
-      { to: recipientPrincipal, file: inputPath },
+      { to: recipientPrincipal, file: inputPath, 'kind17-version': 'v1' },
       sender,
     );
 
@@ -308,7 +408,7 @@ describe('vetkey encrypted messaging', () => {
 
     const sendSession = mockSession(
       ['send-msg'],
-      { to: recipientPrincipal, text: 'hello tamper' },
+      { to: recipientPrincipal, text: 'hello tamper', 'kind17-version': 'v1' },
       sender,
     );
 
@@ -339,7 +439,7 @@ describe('vetkey encrypted messaging', () => {
     // Attacker sends a message, gets a valid envelope signed by their key
     const attackSession = mockSession(
       ['send-msg'],
-      { to: recipientPrincipal, text: 'trust me' },
+      { to: recipientPrincipal, text: 'trust me', 'kind17-version': 'v1' },
       attacker,
     );
 
@@ -381,7 +481,7 @@ describe('vetkey encrypted messaging', () => {
 
     const sendSession = mockSession(
       ['send-msg'],
-      { to: recipientPrincipal, text: plaintext },
+      { to: recipientPrincipal, text: plaintext, 'kind17-version': 'v1' },
       sender,
     );
 
@@ -419,7 +519,7 @@ describe('vetkey encrypted messaging', () => {
 
     const sendSession = mockSession(
       ['send-msg'],
-      { to: recipientPrincipal, text: '' },
+      { to: recipientPrincipal, text: '', 'kind17-version': 'v1' },
       sender,
     );
 
@@ -479,7 +579,7 @@ describe('vetkey encrypted messaging', () => {
 
     const sendSession = mockSession(
       ['send-msg'],
-      { to: recipientPrincipal, text: plaintext },
+      { to: recipientPrincipal, text: plaintext, 'kind17-version': 'v1' },
       sender,
     );
 

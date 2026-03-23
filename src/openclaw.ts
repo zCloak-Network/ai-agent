@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import type { ExecFileException } from 'node:child_process';
 import type { SyncMailboxResult } from './zmail.js';
 import * as log from './log.js';
 
@@ -55,9 +56,15 @@ export async function getOpenClawStatusContext(): Promise<string[] | null> {
 
     return channelAccounts;
   } catch (error) {
+    const execError = error as ExecFileException & { stdout?: string; stderr?: string };
     log.warn('openclaw status failed', {
       command: OPENCLAW_BIN,
       message: error instanceof Error ? error.message : String(error),
+      code: execError.code ?? null,
+      signal: execError.signal ?? null,
+      killed: execError.killed ?? null,
+      stdout: typeof execError.stdout === 'string' ? execError.stdout : null,
+      stderr: typeof execError.stderr === 'string' ? execError.stderr : null,
     });
     return null;
   }
@@ -87,9 +94,15 @@ export async function notifyOpenClawMainAgentOfNewMail(
     ]);
     return true;
   } catch (error) {
+    const execError = error as ExecFileException & { stdout?: string; stderr?: string };
     log.warn('openclaw agent notify failed', {
       command: OPENCLAW_BIN,
       message: error instanceof Error ? error.message : String(error),
+      code: execError.code ?? null,
+      signal: execError.signal ?? null,
+      killed: execError.killed ?? null,
+      stdout: typeof execError.stdout === 'string' ? execError.stdout : null,
+      stderr: typeof execError.stderr === 'string' ? execError.stderr : null,
     });
     return false;
   }

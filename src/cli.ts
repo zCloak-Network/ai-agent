@@ -15,7 +15,7 @@
  *   zcloak-ai pow <base> <zeros>          PoW computation
  *   zcloak-ai vetkey <command> [args]     VetKey encryption/decryption
  *   zcloak-ai social <command> [args]     Social profile query
- *   zcloak-ai zmail <command> [args]      Encrypted mail (register, inbox, sent, ack)
+ *   zcloak-ai zmail <command> [args]      Encrypted mail (register, sync, inbox, sent, ack, policy, allow, block)
  *   zcloak-ai pre-check                   Manually run the package/skill update pre-check
  *
  * Architecture:
@@ -245,7 +245,7 @@ function showHelp(): void {
   );
   console.log("  social      Social profile query (get-profile)");
   console.log(
-    "  zmail       Encrypted mail (register, sync, inbox, sent, ack)",
+    "  zmail       Encrypted mail (register, sync, inbox, sent, ack, policy, allow, block)",
   );
   console.log("  pre-check   Manually run the package/skill update pre-check");
   console.log("");
@@ -291,7 +291,7 @@ async function main(): Promise<void> {
   }
 
   if (moduleName === "pre-check") {
-    const checkResult = await preCheck();
+    const checkResult = await preCheck(process.argv);
     if (checkResult.message) {
       log.info(checkResult.message);
     } else {
@@ -313,7 +313,7 @@ async function main(): Promise<void> {
   // Automatic pre-check for normal commands: compare local CLI version against
   // npm registry, update the npm package and workspace SKILL.md if needed, and
   // stop so the caller can reload context and re-run on the updated bits.
-  const checkResult = await preCheck();
+  const checkResult = await preCheck(process.argv);
   if (checkResult.updated) {
     // Stop all running daemons after a successful upgrade — the background
     // daemons still point at the old package bits. They will be auto-restarted

@@ -28,7 +28,7 @@ const config: AppConfig = {
   // Social platform API base URL
   social_url: 'https://social.zcloak.ai',
   // zMail server API base URL (encrypted mail service)
-  zmail_url: 'https://zmail-api-822734913522.asia-southeast1.run.app',
+  zmail_url: 'https://zmail-api-v2-822734913522.asia-southeast1.run.app',
 };
 
 export default config;

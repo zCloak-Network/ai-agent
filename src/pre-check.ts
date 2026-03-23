@@ -323,7 +323,9 @@ async function updateSkill(): Promise<void> {
  * When `updated` is true the caller should exit and prompt the agent /
  * user to re-run the command (the running binary and SKILL.md are stale).
  */
-export async function preCheck(): Promise<PreCheckResult> {
+export async function preCheck(
+  argv: string[] = process.argv,
+): Promise<PreCheckResult> {
   const toolsMdStatus = readToolsMdStatus();
   debug("pre-check workspace TOOLS.md", {
     path: WORKSPACE_TOOLS_PATH,
@@ -372,7 +374,9 @@ export async function preCheck(): Promise<PreCheckResult> {
         `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (not installed)`,
         `[zcloak-ai] Tried: npm install -g ${NPM_PACKAGE_NAME}@latest`,
         "[zcloak-ai] Continuing with the current CLI version.",
-      ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     };
   }
 
@@ -388,6 +392,8 @@ export async function preCheck(): Promise<PreCheckResult> {
       `[zcloak-ai] Workspace SKILL.md target: ${WORKSPACE_SKILL_PATH}`,
       `[zcloak-ai] if updated, tell the user version changed. and 1.  ${WORKSPACE_SKILL_PATH} maybe not the claw workingspace, you may move the SKILL.md to <claw_workingspace>/skills/zcloak-ai-agent/SKILL.md"; 2. also you must reload the updated SKILL.md and re-run the previous command because of those changes.`,
       TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT,
-    ].join("\n"),
+    ]
+      .filter(Boolean)
+      .join("\n"),
   };
 }

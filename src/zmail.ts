@@ -7,6 +7,9 @@
  *   inbox       Read inbox messages (local cache first, --online for live)
  *   sent        Read sent messages (local cache first, --online for live)
  *   ack         Acknowledge (mark as read) inbox messages
+ *   policy      Show or update who can message this agent
+ *   allow       Manage allow-list sender AI IDs
+ *   block       Manage block-list sender AI IDs
  *
  * All messages are end-to-end encrypted using IBE (Identity-Based Encryption).
  * The zMail server never sees plaintext — it only routes and stores ciphertext.
@@ -67,6 +70,15 @@ export async function run(session: Session): Promise<void> {
     case 'ack':
       await cmdAck(session);
       break;
+    case 'policy':
+      await cmdPolicy(session);
+      break;
+    case 'allow':
+      await cmdAllow(session);
+      break;
+    case 'block':
+      await cmdBlock(session);
+      break;
     default:
       showHelp();
       process.exit(command ? 1 : 0);
@@ -88,6 +100,9 @@ function showHelp(): void {
   console.log('  inbox                 Read inbox messages (cached; use --online for live)');
   console.log('  sent                  Read sent messages (cached; use --online for live)');
   console.log('  ack                   Acknowledge (mark as read) messages');
+  console.log('  policy                Show or update sender policy');
+  console.log('  allow                 Manage allowed sender AI IDs');
+  console.log('  block                 Manage blocked sender AI IDs');
   console.log('');
   console.log('Options:');
   console.log('  --zmail-url=<url>     Override zMail server URL');
@@ -97,6 +112,8 @@ function showHelp(): void {
   console.log('  --from=<principal>    Filter by sender (inbox only)');
   console.log('  --to=<principal>      Filter by recipient (sent only)');
   console.log('  --msg-id=<id,...>     Message IDs to acknowledge (ack only)');
+  console.log('  --mode=<mode>         Policy mode: all | allow_list (policy set)');
+  console.log('  --ai-id=<id>          Sender AI ID to add/remove (allow/block)');
   console.log('  --json                Output raw JSON response');
   console.log('  --online              Force live API fetch (skip local cache)');
   console.log('  --full                Full sync (ignore saved cursor, re-fetch all)');
@@ -109,6 +126,10 @@ function showHelp(): void {
   console.log('  zcloak-ai zmail inbox --online');
   console.log('  zcloak-ai zmail sent --limit=5');
   console.log('  zcloak-ai zmail ack --msg-id=abc123,def456');
+  console.log('  zcloak-ai zmail policy show');
+  console.log('  zcloak-ai zmail policy set --mode=allow_list');
+  console.log('  zcloak-ai zmail allow add --ai-id=sender.ai');
+  console.log('  zcloak-ai zmail block list');
 }
 
 // ============================================================================
@@ -257,6 +278,15 @@ export interface ZmailSendResult {
   received_at: number;
 }
 
+export interface ZmailPreferences {
+  ai_id?: string;
+  message_policy_mode?: string;
+  allow_list?: string[];
+  block_list?: string[];
+  updated_at?: number;
+  [key: string]: unknown;
+}
+
 /**
  * POST a Kind17 envelope to zMail's /v1/send endpoint.
  *
@@ -273,6 +303,13 @@ export async function postEnvelopeToZmail(
   envelope: Kind17Envelope,
 ): Promise<ZmailSendResult> {
   const url = `${zmailUrl}/v1/send`;
+  log.debug('zMail send request', {
+    url,
+    msgId: envelope.id,
+    from: envelope.ai_id,
+    kind: envelope.kind,
+    contentType: typeof envelope.content,
+  });
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -283,9 +320,22 @@ export async function postEnvelopeToZmail(
 
   if (!res.ok) {
     const errorCode = (body.error as string) || `HTTP ${res.status}`;
+    log.debug('zMail send response error', {
+      url,
+      status: res.status,
+      errorCode,
+      msgId: envelope.id,
+    });
     throw new Error(`zMail send failed: ${errorCode}`);
   }
 
+  log.debug('zMail send response ok', {
+    url,
+    status: res.status,
+    msgId: body.msg_id,
+    delivered_to: body.delivered_to,
+    blocked_count: Array.isArray(body.blocked) ? body.blocked.length : undefined,
+  });
   return body as unknown as ZmailSendResult;
 }
 
@@ -381,12 +431,14 @@ async function fetchAllPages(
 ): Promise<{ messages: CachedMessage[]; cursor?: string }> {
   const allMessages: CachedMessage[] = [];
   let currentCursor = cursor;
+  let page = 0;
   // Track the last non-undefined cursor so we don't lose it when the
   // final page returns no cursor (which would reset incremental sync).
   let lastValidCursor = cursor;
 
   // Paginate until no more cursor is returned by the server
   while (true) {
+    page += 1;
     const query: Record<string, string> = { limit: String(SYNC_PAGE_LIMIT) };
     if (currentCursor) query['after'] = currentCursor;
 
@@ -410,6 +462,13 @@ async function fetchAllPages(
     }
 
     const pageMessages = (body.messages ?? []) as CachedMessage[];
+    log.debug('zMail sync page fetched', {
+      endpoint,
+      page,
+      requestedCursor: currentCursor ?? null,
+      returnedCursor: body.cursor ?? null,
+      count: pageMessages.length,
+    });
     allMessages.push(...pageMessages);
 
     currentCursor = body.cursor as string | undefined;
@@ -446,6 +505,15 @@ export async function syncMailbox(
   const prevState = fullSync ? null : readSyncState(principal);
   const prevInbox = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readInbox(principal);
   const prevSent = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readSent(principal);
+  log.debug('zMail sync start', {
+    principal,
+    zmailUrl,
+    fullSync,
+    prevInboxCount: prevInbox.messages.length,
+    prevSentCount: prevSent.messages.length,
+    prevInboxCursor: prevState?.inbox_cursor ?? null,
+    prevSentCursor: prevState?.sent_cursor ?? null,
+  });
 
   if (logProgress) {
     log.info(`Syncing zMail for ${principal}...`);
@@ -471,6 +539,15 @@ export async function syncMailbox(
   const mergedInbox = mergeMessages(prevInbox.messages, inboxResult.messages);
   const mergedSent = mergeMessages(prevSent.messages, sentResult.messages);
   const now = Math.floor(Date.now() / 1000);
+  log.debug('zMail sync merge result', {
+    principal,
+    fetchedInboxCount: inboxResult.messages.length,
+    fetchedSentCount: sentResult.messages.length,
+    mergedInboxCount: mergedInbox.length,
+    mergedSentCount: mergedSent.length,
+    nextInboxCursor: inboxResult.cursor ?? null,
+    nextSentCursor: sentResult.cursor ?? null,
+  });
 
   writeInbox(principal, { version: 1, synced_at: now, messages: mergedInbox });
   writeSent(principal, { version: 1, synced_at: now, messages: mergedSent });
@@ -482,6 +559,12 @@ export async function syncMailbox(
   });
 
   cleanupTmpFiles(principal);
+  log.debug('zMail sync write complete', {
+    principal,
+    syncedAt: now,
+    inboxCount: mergedInbox.length,
+    sentCount: mergedSent.length,
+  });
 
   return {
     inbox_new: Math.max(0, mergedInbox.length - prevInbox.messages.length),
@@ -921,6 +1004,238 @@ async function cmdAck(session: Session): Promise<void> {
     // Cache update is best-effort — log but don't fail the command.
     log.warn('Failed to update local inbox cache after ack (run "zmail sync" to refresh).');
   }
+}
+
+// ============================================================================
+// Commands: policy / allow / block
+// ============================================================================
+
+function normalizeUniqueAiIds(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))];
+}
+
+function requireAiIdValue(session: Session, usage: string): string {
+  const positional = session.args._args[2];
+  const rawAiId = positional || session.args['ai-id'];
+  if (rawAiId === true || typeof rawAiId !== 'string' || rawAiId.trim().length === 0) {
+    console.error(`Usage: ${usage}`);
+    process.exit(1);
+  }
+  return rawAiId.trim();
+}
+
+async function fetchPreferences(
+  session: Session,
+  zmailUrl: string,
+  principal: string,
+): Promise<ZmailPreferences> {
+  const path = `/v1/preferences/${principal}`;
+  const headers = buildOwnershipProofHeaders(session, 'GET', path);
+
+  let res: Response;
+  try {
+    res = await fetch(`${zmailUrl}${path}`, { method: 'GET', headers });
+  } catch (err) {
+    throw new Error(`Failed to connect to zMail: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const body = await res.json() as Record<string, unknown>;
+  if (!res.ok) {
+    const errorCode = (body.error as string) || `HTTP ${res.status}`;
+    throw new Error(`Preferences fetch failed: ${errorCode}`);
+  }
+
+  return body as ZmailPreferences;
+}
+
+async function updatePreferences(
+  session: Session,
+  zmailUrl: string,
+  body: {
+    ai_id: string;
+    message_policy_mode?: string;
+    allow_list?: string[];
+    block_list?: string[];
+  },
+): Promise<ZmailPreferences> {
+  const path = '/v1/preferences';
+  const headers = {
+    'Content-Type': 'application/json',
+    ...buildOwnershipProofHeaders(session, 'POST', path, undefined, body),
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${zmailUrl}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new Error(`Failed to connect to zMail: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const responseBody = await res.json() as Record<string, unknown>;
+  if (!res.ok) {
+    const errorCode = (responseBody.error as string) || `HTTP ${res.status}`;
+    throw new Error(`Preferences update failed: ${errorCode}`);
+  }
+
+  return responseBody as ZmailPreferences;
+}
+
+function outputPreferences(preferences: ZmailPreferences, jsonOutput: boolean): void {
+  if (jsonOutput) {
+    console.log(JSON.stringify(preferences, null, 2));
+    return;
+  }
+
+  const mode = preferences.message_policy_mode ?? 'all';
+  const allowList = Array.isArray(preferences.allow_list) ? preferences.allow_list : [];
+  const blockList = Array.isArray(preferences.block_list) ? preferences.block_list : [];
+
+  console.log('Message policy:');
+  console.log(`  Mode:        ${mode}`);
+  console.log(`  Allow list:  ${allowList.length}`);
+  console.log(`  Block list:  ${blockList.length}`);
+
+  if (allowList.length > 0) {
+    console.log('');
+    console.log('Allowed senders:');
+    for (const aiId of allowList) {
+      console.log(`  ${aiId}`);
+    }
+  }
+
+  if (blockList.length > 0) {
+    console.log('');
+    console.log('Blocked senders:');
+    for (const aiId of blockList) {
+      console.log(`  ${aiId}`);
+    }
+  }
+}
+
+function outputAiIdList(title: string, values: string[], jsonOutput: boolean): void {
+  if (jsonOutput) {
+    console.log(JSON.stringify(values, null, 2));
+    return;
+  }
+
+  console.log(`${title}: ${values.length}`);
+  if (values.length === 0) {
+    return;
+  }
+
+  console.log('');
+  for (const value of values) {
+    console.log(`  ${value}`);
+  }
+}
+
+async function cmdPolicy(session: Session): Promise<void> {
+  const action = session.args._args[1];
+  const zmailUrl = resolveZmailUrl(session);
+  const principal = session.getPrincipal();
+
+  if (action === 'show') {
+    const preferences = await fetchPreferences(session, zmailUrl, principal);
+    outputPreferences(preferences, session.args['json'] === true);
+    return;
+  }
+
+  if (action === 'set') {
+    const rawMode = session.args['mode'];
+    if (rawMode === true || typeof rawMode !== 'string' || rawMode.trim().length === 0) {
+      console.error('Usage: zcloak-ai zmail policy set --mode=<all|allow_list>');
+      process.exit(1);
+    }
+
+    const mode = rawMode.trim();
+    if (mode !== 'all' && mode !== 'allow_list') {
+      throw new Error('Invalid policy mode: expected "all" or "allow_list"');
+    }
+
+    const preferences = await updatePreferences(session, zmailUrl, {
+      ai_id: principal,
+      message_policy_mode: mode,
+    });
+    outputPreferences(preferences, session.args['json'] === true);
+    return;
+  }
+
+  console.error('Usage: zcloak-ai zmail policy <show|set> [options]');
+  process.exit(1);
+}
+
+async function cmdAllow(session: Session): Promise<void> {
+  const action = session.args._args[1];
+  const zmailUrl = resolveZmailUrl(session);
+  const principal = session.getPrincipal();
+  const current = await fetchPreferences(session, zmailUrl, principal);
+  const currentAllowList = Array.isArray(current.allow_list) ? current.allow_list : [];
+  const currentBlockList = Array.isArray(current.block_list) ? current.block_list : [];
+
+  if (action === 'list') {
+    outputAiIdList('Allow list', currentAllowList, session.args['json'] === true);
+    return;
+  }
+
+  const targetAiId = requireAiIdValue(session, `zcloak-ai zmail allow ${action ?? '<add|remove>'} --ai-id=<sender_ai_id>`);
+  let nextAllowList = currentAllowList;
+  let nextBlockList = currentBlockList;
+
+  if (action === 'add') {
+    nextAllowList = normalizeUniqueAiIds([...currentAllowList, targetAiId]);
+    nextBlockList = currentBlockList.filter((entry) => entry !== targetAiId);
+  } else if (action === 'remove') {
+    nextAllowList = currentAllowList.filter((entry) => entry !== targetAiId);
+  } else {
+    console.error('Usage: zcloak-ai zmail allow <list|add|remove> [options]');
+    process.exit(1);
+  }
+
+  const preferences = await updatePreferences(session, zmailUrl, {
+    ai_id: principal,
+    allow_list: nextAllowList,
+    block_list: nextBlockList,
+  });
+  outputPreferences(preferences, session.args['json'] === true);
+}
+
+async function cmdBlock(session: Session): Promise<void> {
+  const action = session.args._args[1];
+  const zmailUrl = resolveZmailUrl(session);
+  const principal = session.getPrincipal();
+  const current = await fetchPreferences(session, zmailUrl, principal);
+  const currentAllowList = Array.isArray(current.allow_list) ? current.allow_list : [];
+  const currentBlockList = Array.isArray(current.block_list) ? current.block_list : [];
+
+  if (action === 'list') {
+    outputAiIdList('Block list', currentBlockList, session.args['json'] === true);
+    return;
+  }
+
+  const targetAiId = requireAiIdValue(session, `zcloak-ai zmail block ${action ?? '<add|remove>'} --ai-id=<sender_ai_id>`);
+  let nextAllowList = currentAllowList;
+  let nextBlockList = currentBlockList;
+
+  if (action === 'add') {
+    nextBlockList = normalizeUniqueAiIds([...currentBlockList, targetAiId]);
+    nextAllowList = currentAllowList.filter((entry) => entry !== targetAiId);
+  } else if (action === 'remove') {
+    nextBlockList = currentBlockList.filter((entry) => entry !== targetAiId);
+  } else {
+    console.error('Usage: zcloak-ai zmail block <list|add|remove> [options]');
+    process.exit(1);
+  }
+
+  const preferences = await updatePreferences(session, zmailUrl, {
+    ai_id: principal,
+    allow_list: nextAllowList,
+    block_list: nextBlockList,
+  });
+  outputPreferences(preferences, session.args['json'] === true);
 }
 
 // ============================================================================
