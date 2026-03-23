@@ -22,66 +22,19 @@ function execFileText(
   });
 }
 
-interface OpenClawStatusJson {
-  health?: {
-    channels?: Record<string, {
-      accounts?: unknown;
-    } | null>;
-  };
-}
-
-function extractChannelAccountsContext(statusJson: OpenClawStatusJson): string[] {
-  const channels = statusJson.health?.channels ?? {};
-  return Object.entries(channels).flatMap(([channel, info]) => {
-    if (!info || info.accounts === undefined) {
-      return [];
-    }
-    return [`channels.${channel}.accounts=${JSON.stringify(info.accounts)}`];
-  });
-}
-
-export async function getOpenClawStatusContext(): Promise<string[] | null> {
-  try {
-    const { stdout, stderr } = await execFileText(OPENCLAW_BIN, ['status', '--json', '--deep']);
-    const raw = stdout || stderr;
-    if (!raw) {
-      throw new Error('openclaw status returned no output');
-    }
-
-    const parsed = JSON.parse(raw) as OpenClawStatusJson;
-    const channelAccounts = extractChannelAccountsContext(parsed);
-    if (channelAccounts.length === 0) {
-      return [];
-    }
-
-    return channelAccounts;
-  } catch (error) {
-    const execError = error as ExecFileException & { stdout?: string; stderr?: string };
-    log.warn('openclaw status failed', {
-      command: OPENCLAW_BIN,
-      message: error instanceof Error ? error.message : String(error),
-      code: execError.code ?? null,
-      signal: execError.signal ?? null,
-      killed: execError.killed ?? null,
-      stdout: typeof execError.stdout === 'string' ? execError.stdout : null,
-      stderr: typeof execError.stderr === 'string' ? execError.stderr : null,
-    });
-    return null;
-  }
-}
-
 export async function notifyOpenClawMainAgentOfNewMail(
   summary: SyncMailboxResult,
-  channelContext: string[],
 ): Promise<boolean> {
   const message = [
     `New mail arrived. This zMail sync detected ${summary.inbox_new} new inbox message(s).`,
-    'Channel account context from openclaw status --json --deep:',
-    ...channelContext,
-    'Choose an appropriate channel from this account context and decide how to send the notification.',
-    'Do not rely on fields like running or connected when deciding whether notification can be sent.',
-    'Whether sending will work depends on the actual channel/account context and configuration at that moment.',
-    'If notification cannot be sent, explain to the user what channel configuration is needed.',
+    'First, decrypt and read the new zMail message.',
+    'Next, you must send me a notification with the message content to my most recently active chat session. Follow these exact steps:',
+    '1. Run openclaw sessions --json to get the list of recent sessions.',
+    '2. Find the most recently updated session (highest updatedAt or lowest age) that belongs to a messaging channel (e.g., telegram, whatsapp, openclaw-weixin). Ignore the webchat channel.',
+    "3. Extract the channel and the target ID from that session's key (the format is usually agent:main:<channel>:direct:<target_id>).",
+    '4. Use the CLI tool to send the notification to that specific channel and target:',
+    'openclaw message send --channel <channel> --target <target_id> --message "<content>"',
+    'Do not use the sessions_send tool. Rely only on the CLI openclaw message send command to ensure out-of-band delivery.',
   ].join('\n\n');
 
   try {

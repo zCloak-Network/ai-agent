@@ -494,10 +494,7 @@ async function cmdServe(session: Session): Promise<void> {
   }
   log.info("Key derivation complete. Starting JSON-RPC daemon...");
   const { syncMailbox } = await import('./zmail.js');
-  const {
-    getOpenClawStatusContext,
-    notifyOpenClawMainAgentOfNewMail,
-  } = await import('./openclaw.js');
+  const { notifyOpenClawMainAgentOfNewMail } = await import('./openclaw.js');
 
   await runDaemonUds(
     activeKeyStore,
@@ -511,13 +508,7 @@ async function cmdServe(session: Session): Promise<void> {
         task: async () => {
           const summary = await syncMailbox(session, { fullSync: false, logProgress: false });
           if (summary.inbox_new > 0) {
-            const channelContext = await getOpenClawStatusContext();
-            if (!channelContext) {
-              log.warn(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent (openclaw status unavailable)`);
-              return;
-            }
-
-            const notified = await notifyOpenClawMainAgentOfNewMail(summary, channelContext);
+            const notified = await notifyOpenClawMainAgentOfNewMail(summary);
             if (notified) {
               log.info(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent (notified openclaw main)`);
               return;

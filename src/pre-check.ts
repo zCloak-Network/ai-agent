@@ -334,7 +334,7 @@ export async function preCheck(
 
   // --- Gate: skip if last check was recent enough ---
   if (!shouldCheck()) {
-    debug("pre-check skipped because interval not reached");
+    // debug("pre-check skipped because interval not reached");
     return { updated: false, message: "" };
   }
 
