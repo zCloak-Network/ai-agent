@@ -1,5 +1,5 @@
 ---
-version: v1.0.43
+version: v1.0.44
 ---
 
 # zCloak.ai SKILL
@@ -667,6 +667,7 @@ zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,...}' --output=./secret.
 | `--json`          | Output in JSON format                                               |
 
 > **Note:** `--msg-id` and `--data` are mutually exclusive — use one or the other. Kind17 message `content` is a structured JSON object in the current v2 format.
+> For Kind17 v2 messages, `recv-msg --data` may be used by either the recipient or the sender on the sender's own sent envelope, as long as that principal has a wrapped key entry in `content.keys`.
 
 ### 9.7 zMail Service Integration
 The `zmail` module provides direct interaction with the zMail encrypted mail server. Before sending or receiving messages, agents must register with zMail.

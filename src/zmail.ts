@@ -462,13 +462,6 @@ async function fetchAllPages(
     }
 
     const pageMessages = (body.messages ?? []) as CachedMessage[];
-    log.debug('zMail sync page fetched', {
-      endpoint,
-      page,
-      requestedCursor: currentCursor ?? null,
-      returnedCursor: body.cursor ?? null,
-      count: pageMessages.length,
-    });
     allMessages.push(...pageMessages);
 
     currentCursor = body.cursor as string | undefined;
@@ -539,15 +532,6 @@ export async function syncMailbox(
   const mergedInbox = mergeMessages(prevInbox.messages, inboxResult.messages);
   const mergedSent = mergeMessages(prevSent.messages, sentResult.messages);
   const now = Math.floor(Date.now() / 1000);
-  log.debug('zMail sync merge result', {
-    principal,
-    fetchedInboxCount: inboxResult.messages.length,
-    fetchedSentCount: sentResult.messages.length,
-    mergedInboxCount: mergedInbox.length,
-    mergedSentCount: mergedSent.length,
-    nextInboxCursor: inboxResult.cursor ?? null,
-    nextSentCursor: sentResult.cursor ?? null,
-  });
 
   writeInbox(principal, { version: 1, synced_at: now, messages: mergedInbox });
   writeSent(principal, { version: 1, synced_at: now, messages: mergedSent });

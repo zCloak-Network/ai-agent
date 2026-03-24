@@ -304,7 +304,7 @@ describe('vetkey encrypted messaging', () => {
     await expect(run(session)).rejects.toThrow('Message too large');
   });
 
-  it('recv-msg decrypts Kind17 v2 content by default', async () => {
+  it('recv-msg allows the recipient to decrypt a Kind17 v2 envelope', async () => {
     const sender = Secp256k1KeyIdentity.generate();
     const recipient = Secp256k1KeyIdentity.generate();
     const recipientPrincipal = recipient.getPrincipal().toText();
@@ -350,6 +350,117 @@ describe('vetkey encrypted messaging', () => {
     expect(result.payload_type).toBe('text');
     expect(result.plaintext).toBe('hello new world');
     expect(result.verified_sender).toBe(true);
+  });
+
+  it('recv-msg allows the sender to decrypt their own Kind17 v2 sent copy', async () => {
+    const sender = Secp256k1KeyIdentity.generate();
+    const senderPrincipal = sender.getPrincipal().toText();
+    const recipient = Secp256k1KeyIdentity.generate();
+    const recipientPrincipal = recipient.getPrincipal().toText();
+
+    const sendSession = mockSession(
+      ['send-msg'],
+      { to: recipientPrincipal, text: 'sender copy', 'no-zmail': true },
+      sender,
+    );
+
+    await run(sendSession);
+    const envelope = readLastJsonLog();
+
+    const wrappedBodyKey = Buffer.alloc(32, 6);
+    daemonResponse = {
+      id: 1,
+      result: {
+        data_base64: wrappedBodyKey.toString('base64'),
+        plaintext_size: wrappedBodyKey.length,
+      },
+    };
+    mockAes256GcmDecryptRaw.mockReturnValueOnce(Buffer.from('sender copy', 'utf8'));
+    mockLog.mockClear();
+    lastSocketRequest = undefined;
+
+    const recvSession = mockSession(
+      ['recv-msg'],
+      { data: JSON.stringify(envelope), json: true },
+      sender,
+    );
+
+    await run(recvSession);
+
+    expect(lastSocketRequest).toEqual({
+      id: 1,
+      method: 'ibe-decrypt',
+      params: {
+        ibe_identity: `${senderPrincipal}:Mail`,
+        ciphertext_base64: 'AQIDBA==',
+      },
+    });
+
+    const result = readLastJsonLog();
+    expect(result.to).toEqual([recipientPrincipal]);
+    expect(result.plaintext).toBe('sender copy');
+    expect(result.verified_sender).toBe(true);
+  });
+
+  it('recv-msg rejects unrelated principals for Kind17 v2 envelopes', async () => {
+    const sender = Secp256k1KeyIdentity.generate();
+    const recipient = Secp256k1KeyIdentity.generate();
+    const unrelated = Secp256k1KeyIdentity.generate();
+    const recipientPrincipal = recipient.getPrincipal().toText();
+    const unrelatedPrincipal = unrelated.getPrincipal().toText();
+
+    const sendSession = mockSession(
+      ['send-msg'],
+      { to: recipientPrincipal, text: 'not for you', 'no-zmail': true },
+      sender,
+    );
+
+    await run(sendSession);
+    const envelope = readLastJsonLog();
+
+    mockLog.mockClear();
+    lastSocketRequest = undefined;
+
+    const recvSession = mockSession(
+      ['recv-msg'],
+      { data: JSON.stringify(envelope), json: true },
+      unrelated,
+    );
+
+    await expect(run(recvSession)).rejects.toThrow(
+      `Envelope is not decryptable by "${unrelatedPrincipal}"`,
+    );
+    expect(lastSocketRequest).toBeUndefined();
+  });
+
+  it('recv-msg keeps Kind17 v1 envelopes recipient-only', async () => {
+    const sender = Secp256k1KeyIdentity.generate();
+    const senderPrincipal = sender.getPrincipal().toText();
+    const recipient = Secp256k1KeyIdentity.generate();
+    const recipientPrincipal = recipient.getPrincipal().toText();
+
+    const sendSession = mockSession(
+      ['send-msg'],
+      { to: recipientPrincipal, text: 'legacy copy', 'no-zmail': true, 'kind17-version': 'v1' },
+      sender,
+    );
+
+    await run(sendSession);
+    const envelope = readLastJsonLog();
+
+    mockLog.mockClear();
+    lastSocketRequest = undefined;
+
+    const recvSession = mockSession(
+      ['recv-msg'],
+      { data: JSON.stringify(envelope), json: true },
+      sender,
+    );
+
+    await expect(run(recvSession)).rejects.toThrow(
+      `Envelope is not decryptable by "${senderPrincipal}"`,
+    );
+    expect(lastSocketRequest).toBeUndefined();
   });
 
   it('recv-msg writes file payloads to disk when output is provided', async () => {
@@ -414,8 +525,12 @@ describe('vetkey encrypted messaging', () => {
 
     await run(sendSession);
     const envelope = readLastJsonLog();
-    // Tamper with the content — ID will no longer match
-    envelope.content = 'AAAA';
+    // Tamper with the content while keeping it parseable JSON — ID will no longer match
+    envelope.content = JSON.stringify({
+      v: 1,
+      type: 'text',
+      ct: 'BBBB',
+    });
 
     mockLog.mockClear();
     lastSocketRequest = undefined;

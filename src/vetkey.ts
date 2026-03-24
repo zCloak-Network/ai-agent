@@ -1245,7 +1245,6 @@ interface ParsedKind17ContentV2 {
   version: 'v2';
   payloadType: MessagePayloadType;
   content: Kind17ContentV2;
-  wrappedKeyBase64: string;
   filename?: string;
 }
 
@@ -1719,18 +1718,29 @@ async function cmdRecvMsg(session: Session): Promise<void> {
     contentType: typeof envelope.content,
   });
 
-  // Verify this envelope is addressed to us
   const recipients = envelope.tags.filter(t => t[0] === 'to').map(t => t[1]);
-  if (!recipients.includes(principal)) {
-    throw new Error(
-      `Envelope is not addressed to "${principal}" — recipients: ${recipients.join(', ')}`,
-    );
+  const parsedContent = parseKind17MessageContent(envelope, principal);
+  let wrappedKeyBase64: string | undefined;
+
+  if (parsedContent.version === 'v1') {
+    if (!recipients.includes(principal)) {
+      throw new Error(
+        `Envelope is not decryptable by "${principal}" — recipients: ${recipients.join(', ')}`,
+      );
+    }
+  } else {
+    const candidateWrappedKey = parsedContent.content.keys[principal];
+    if (typeof candidateWrappedKey !== 'string' || candidateWrappedKey.length === 0) {
+      throw new Error(
+        `Envelope is not decryptable by "${principal}" — recipients: ${recipients.join(', ')}`,
+      );
+    }
+    wrappedKeyBase64 = candidateWrappedKey;
   }
 
   // Verify envelope integrity and sender authentication.
   // Returns true only if full Schnorr signature + principal binding was verified.
   const verifiedSender = verifyKind17Signature(envelope);
-  const parsedContent = parseKind17MessageContent(envelope, principal);
   const payloadType = parsedContent.payloadType;
   const filename = parsedContent.filename;
   log.debug('recv-msg content parsed', {
@@ -1744,7 +1754,7 @@ async function cmdRecvMsg(session: Session): Promise<void> {
 
   const plaintextBytes = parsedContent.version === 'v1'
     ? await decryptKind17V1Content(principal, parsedContent)
-    : await decryptKind17V2Content(principal, envelope, parsedContent);
+    : await decryptKind17V2Content(principal, envelope, parsedContent, wrappedKeyBase64!);
   log.debug('recv-msg decrypt complete', {
     msgId: envelope.id,
     version: parsedContent.version,
@@ -1877,16 +1887,10 @@ function parseKind17MessageContent(
     throw new Error('Invalid Kind17 v2 content: keys must be an object');
   }
 
-  const wrappedKeyBase64 = (parsed.keys as Record<string, unknown>)[readerPrincipal];
-  if (typeof wrappedKeyBase64 !== 'string' || wrappedKeyBase64.length === 0) {
-    throw new Error(`Kind17 v2 content does not contain a wrapped key for reader "${readerPrincipal}"`);
-  }
-
   return {
     version: 'v2',
     payloadType: parsed.type,
     content: parsed as Kind17ContentV2,
-    wrappedKeyBase64,
     filename,
   };
 }
@@ -1932,6 +1936,7 @@ async function decryptKind17V2Content(
   principal: string,
   envelope: Kind17Envelope,
   parsed: ParsedKind17ContentV2,
+  wrappedKeyBase64: string,
 ): Promise<Buffer> {
   log.debug('recv-msg v2 wrapped-key decrypt start', {
     msgId: envelope.id,
@@ -1942,7 +1947,7 @@ async function decryptKind17V2Content(
     method: 'ibe-decrypt',
     params: {
       ibe_identity: `${principal}:Mail`,
-      ciphertext_base64: parsed.wrappedKeyBase64,
+      ciphertext_base64: wrappedKeyBase64,
     },
   });
 

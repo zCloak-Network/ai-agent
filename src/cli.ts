@@ -292,6 +292,15 @@ async function main(): Promise<void> {
 
   if (moduleName === "pre-check") {
     const checkResult = await preCheck(process.argv);
+    if (checkResult.updated) {
+      try {
+        await stopAllDaemons();
+      } catch {
+        // Best-effort — don't block upgrade on daemon stop failure
+      }
+
+      warmUpDaemonForCurrentIdentity(process.argv);
+    }
     if (checkResult.message) {
       log.info(checkResult.message);
     } else {
