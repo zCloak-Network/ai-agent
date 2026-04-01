@@ -4,23 +4,20 @@
  * Verifies:
  *   - `updated: true` is returned only after npm install succeeds
  *   - automatic update failure does not masquerade as a successful upgrade
- *   - workspace SKILL.md refresh only runs after a successful CLI upgrade
+ *   - skill packages are not refreshed by pre-check
  */
 
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { EventEmitter } from 'events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   mockHomedir,
   mockExecSync,
-  mockHttpsGet,
 } = vi.hoisted(() => ({
   mockHomedir: vi.fn(),
   mockExecSync: vi.fn(),
-  mockHttpsGet: vi.fn(),
 }));
 
 vi.mock('os', async (importOriginal) => {
@@ -30,11 +27,6 @@ vi.mock('os', async (importOriginal) => {
 
 vi.mock('child_process', () => ({
   execSync: mockExecSync,
-}));
-
-vi.mock('https', () => ({
-  default: { get: mockHttpsGet },
-  get: mockHttpsGet,
 }));
 
 vi.mock('../log.js', () => ({
@@ -54,44 +46,11 @@ async function loadPreCheckModule() {
   return import('../pre-check.js');
 }
 
-function installSuccessfulSkillDownload(body: string): void {
-  mockHttpsGet.mockImplementation((_url: string, callback: (res: EventEmitter & {
-    statusCode?: number;
-    resume(): void;
-    setEncoding(encoding: string): void;
-  }) => void) => {
-    const response = new EventEmitter() as EventEmitter & {
-      statusCode?: number;
-      resume(): void;
-      setEncoding(encoding: string): void;
-    };
-    response.statusCode = 200;
-    response.resume = () => {};
-    response.setEncoding = () => {};
-
-    const request = new EventEmitter() as EventEmitter & {
-      setTimeout(timeout: number, handler: () => void): void;
-      destroy(): void;
-    };
-    request.setTimeout = (_timeout: number, _handler: () => void) => {};
-    request.destroy = () => {};
-
-    queueMicrotask(() => {
-      callback(response);
-      response.emit('data', body);
-      response.emit('end');
-    });
-
-    return request;
-  });
-}
-
 beforeEach(() => {
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'zcloak-precheck-home-'));
   tmpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'zcloak-precheck-cwd-'));
   mockHomedir.mockReturnValue(tmpHome);
   mockExecSync.mockReset();
-  mockHttpsGet.mockReset();
   process.chdir(tmpCwd);
 });
 
@@ -109,20 +68,21 @@ describe('preCheck', () => {
       if (command === 'npm install -g @zcloak/ai-agent@latest') return '';
       throw new Error(`Unexpected command: ${command}`);
     });
-    installSuccessfulSkillDownload('updated skill body');
 
     const { preCheck } = await loadPreCheckModule();
     const result = await preCheck();
 
     expect(result.updated).toBe(true);
     expect(result.message).toContain('Version update detected!');
+    expect(result.message).toContain('Skill packages are upgraded separately from the CLI.');
+    expect(result.message).toContain('npx clawhub@latest install zcloak-ai-agent --force');
     expect(mockExecSync).toHaveBeenCalledWith(
       'npm install -g @zcloak/ai-agent@latest',
       expect.objectContaining({ stdio: 'pipe' }),
     );
 
     const skillPath = path.join(tmpCwd, 'skills', 'zcloak-ai-agent', 'SKILL.md');
-    expect(fs.readFileSync(skillPath, 'utf-8')).toBe('updated skill body');
+    expect(fs.existsSync(skillPath)).toBe(false);
 
     const checkFile = path.join(tmpHome, '.config', 'zcloak', '.last-update-check');
     expect(fs.existsSync(checkFile)).toBe(true);
@@ -142,8 +102,9 @@ describe('preCheck', () => {
 
     expect(result.updated).toBe(false);
     expect(result.message).toContain('automatic CLI update failed');
+    expect(result.message).toContain('Skill packages are not updated by pre-check.');
+    expect(result.message).toContain('npx clawhub@latest install zcloak-ai-agent --force');
     expect(result.message).toContain('Continuing with the current CLI version.');
-    expect(mockHttpsGet).not.toHaveBeenCalled();
 
     const skillPath = path.join(tmpCwd, 'skills', 'zcloak-ai-agent', 'SKILL.md');
     expect(fs.existsSync(skillPath)).toBe(false);

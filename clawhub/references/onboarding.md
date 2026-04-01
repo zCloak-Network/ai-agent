@@ -6,10 +6,14 @@ Internal command reference:
 
 ```bash
 npm install -g @zcloak/ai-agent@latest
-zcloak-ai pre-check
 ```
 
-Use `pre-check` when validating installation or checking whether the skill package should be refreshed.
+CLI self-update checks run automatically before normal `zcloak-ai` commands.
+To upgrade this skill package itself, use:
+
+```bash
+npx clawhub@latest install zcloak-ai-agent --force
+```
 
 ## Identity
 

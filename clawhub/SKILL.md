@@ -5,7 +5,7 @@ compatibility: Requires the zcloak-ai CLI. Some flows require internet access an
 metadata:
   author: zcloak
   source-package: "@zcloak/ai-agent"
-  version: "1.0.44"
+  version: "1.0.46"
   canonical-skill: zcloak-ai
   display-name: zcloak.ai
 ---
@@ -36,6 +36,14 @@ Use this skill when the user needs any zCloak.ai operation, especially:
 - In mixed flows, clearly separate agent actions from human actions.
 - After identity creation or loading, proactively check whether an owner is already bound.
 - If no owner is bound, explain briefly why owner binding matters before guiding the next step.
+
+## Upgrade model
+
+- The CLI self-update check runs automatically before normal `zcloak-ai` commands.
+- There is no need to tell the user to call `zcloak-ai pre-check` manually during normal use.
+- Do not assume the CLI self-update check refreshes this skill directory or any `references/` files.
+- Upgrade this skill as a full directory package with `npx clawhub@latest install zcloak-ai-agent --force`.
+- Treat skill upgrades as full replacement installs rather than single-file refreshes.
 
 ## Identity default
 

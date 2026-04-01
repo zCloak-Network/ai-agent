@@ -16,7 +16,6 @@
  *   zcloak-ai vetkey <command> [args]     VetKey encryption/decryption
  *   zcloak-ai social <command> [args]     Social profile query
  *   zcloak-ai zmail <command> [args]      Encrypted mail (register, sync, inbox, sent, ack, policy, allow, block)
- *   zcloak-ai pre-check                   Manually run the package/skill update pre-check
  *
  * Architecture:
  *   cli.ts creates a Session from a constructed sub-argv array and passes it
@@ -247,7 +246,6 @@ function showHelp(): void {
   console.log(
     "  zmail       Encrypted mail (register, sync, inbox, sent, ack, policy, allow, block)",
   );
-  console.log("  pre-check   Manually run the package/skill update pre-check");
   console.log("");
   console.log("Global options:");
   console.log("  --identity=<pem_path>     Specify identity PEM file");
@@ -260,7 +258,6 @@ function showHelp(): void {
   console.log("  zcloak-ai feed counter");
   console.log("  zcloak-ai verify file ./report.pdf");
   console.log("  zcloak-ai doc hash ./report.pdf");
-  console.log("  zcloak-ai pre-check");
   console.log("");
   console.log("Module help:");
   console.log(
@@ -320,8 +317,8 @@ async function main(): Promise<void> {
   }
 
   // Automatic pre-check for normal commands: compare local CLI version against
-  // npm registry, update the npm package and workspace SKILL.md if needed, and
-  // stop so the caller can reload context and re-run on the updated bits.
+  // npm registry, update the npm package if needed, and stop so the caller can
+  // reload context and re-run on the updated CLI bits.
   const checkResult = await preCheck(process.argv);
   if (checkResult.updated) {
     // Stop all running daemons after a successful upgrade — the background

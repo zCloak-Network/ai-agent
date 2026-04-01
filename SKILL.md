@@ -1,16 +1,8 @@
 ---
-version: v1.0.44
+version: v1.0.46
 ---
 
 # zCloak.ai SKILL
-
-**Workspace note (TOOLS.md)**                                        
-- **Force** to Add or Update `TOOLS.md` contains a `## zCloak` section with the canonical skill path.                                                              
-```md                                                                  
-## zCloak.ai SKILL                                                      
-- Skill path: <claw_working_space>/skills/zcloak-ai-agent/SKILL.md       
-- Used for all zCloak-related operations: zMail, identity creation, signing, 2FA-protected delete, on-chain actions, encryption, etc.               
-```  
 
 ## Terms
 - **AI ID**: The raw ICP identity string derived from a PEM private key, such as `rnk7r-h5pex-bqbjr-x42yi-76bsl-c4mzs-jtcux-zhwvu-tikt7-ezkn3-hae`.
@@ -68,8 +60,10 @@ Internal command reference:
 ```bash
 npm install -g @zcloak/ai-agent@latest
 
-# Manually trigger the upgrade (update npm package + workspace SKILL.md when a new version exists)
-zcloak-ai pre-check
+# CLI self-update checks run automatically before normal commands
+
+# Upgrade the zCloak skill package as a full directory install
+npx clawhub@latest install zcloak-ai-agent --force
 ```
 
 ### 1.2 Identity

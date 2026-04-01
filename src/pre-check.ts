@@ -2,8 +2,8 @@
  * Pre-flight Update Check
  *
  * Runs before every CLI command to ensure the CLI package is up-to-date.
- * When a new npm version is available, we update both the npm package and the
- * workspace SKILL.md together, then ask the caller to re-run.
+ * When a new npm version is available, we update the CLI package and then ask
+ * the caller to re-run. Skill packages are upgraded separately via clawhub.
  *
  * Flow:
  *   1. Read ~/.config/zcloak/.last-update-check timestamp
@@ -11,7 +11,7 @@
  *   3. If >= 15 minutes or file missing →
  *      a. Query npm registry for latest published version
  *      b. Compare local package.json version against the registry version
- *      c. If outdated → update npm package and workspace SKILL.md
+ *      c. If outdated → update npm package
  *      d. Write current timestamp to .last-update-check
  *
  * Design principles:
@@ -21,7 +21,6 @@
  */
 
 import fs from "fs";
-import https from "https";
 import path from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
@@ -47,22 +46,13 @@ const CONFIG_DIR = getConfigDir();
 /** Timestamp file recording when we last checked for updates */
 const CHECK_FILE = lastUpdateCheckPath();
 
-/** Workspace SKILL.md path expected by openClaw. */
-const WORKSPACE_SKILL_PATH = path.resolve(
-  process.cwd(),
-  "skills",
-  "zcloak-ai-agent",
-  "SKILL.md",
-);
-
-/** Optional workspace TOOLS.md path in the current working directory. */
-const WORKSPACE_TOOLS_PATH = path.resolve(process.cwd(), "TOOLS.md");
-
-/** Instruction appended when the current workspace should refresh TOOLS.md with the zCloak skill entry. */
+/** Instruction appended when the current workspace should register the zCloak skill in TOOLS.md. */
 const TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT = [
-  "force to add or override following realated section to <claw_workspace>/TOOLS.md：",
+  "[zcloak-ai] If the workspace uses TOOLS.md to route skills, add or update this section:",
   "## zCloak.ai SKILL",
-  "- Skill path: <claw_workspace>/skills/zcloak-ai-agent/SKILL.md",
+  "- Skill package: <claw_workspace>/skills/zcloak-ai-agent/",
+  "- Entry file: <claw_workspace>/skills/zcloak-ai-agent/SKILL.md",
+  "- Upgrade: npx clawhub@latest install zcloak-ai-agent --force",
   "- Used for all zCloak-related operations: zMail, identity creation, signing, 2FA-protected delete, on-chain actions, encryption, etc.",
 ].join("\n");
 
@@ -82,13 +72,6 @@ const NPM_INSTALL_TIMEOUT_MS = 60_000;
 /** npm package name for version queries */
 const NPM_PACKAGE_NAME = "@zcloak/ai-agent";
 
-/** Canonical remote SKILL.md URL */
-const SKILL_MD_URL =
-  "https://raw.githubusercontent.com/zCloak-Network/ai-agent/refs/heads/main/SKILL.md";
-
-/** Raw SKILL.md fetch timeout (milliseconds) */
-const SKILL_FETCH_TIMEOUT_MS = 10_000;
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -99,26 +82,6 @@ export interface PreCheckResult {
   updated: boolean;
   /** Human / agent-readable message (empty string when nothing noteworthy happened) */
   message: string;
-}
-
-interface ToolsMdStatus {
-  exists: boolean;
-  readError: boolean;
-}
-
-function readToolsMdStatus(): ToolsMdStatus {
-  try {
-    const exists = fs.existsSync(WORKSPACE_TOOLS_PATH);
-    return {
-      exists,
-      readError: false,
-    };
-  } catch {
-    return {
-      exists: false,
-      readError: true,
-    };
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -245,75 +208,6 @@ function updateCli(): boolean {
 }
 
 /**
- * Download a text file over HTTPS.
- * Returns null on any network or timeout failure.
- */
-function downloadText(url: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    const req = https.get(url, (res) => {
-      if (res.statusCode !== 200) {
-        res.resume();
-        resolve(null);
-        return;
-      }
-
-      res.setEncoding("utf8");
-      let body = "";
-      res.on("data", (chunk) => {
-        body += chunk;
-      });
-      res.on("end", () => {
-        resolve(body);
-      });
-    });
-
-    req.setTimeout(SKILL_FETCH_TIMEOUT_MS, () => {
-      req.destroy();
-      resolve(null);
-    });
-
-    req.on("error", () => {
-      resolve(null);
-    });
-  });
-}
-
-/**
- * Refresh the workspace SKILL.md from the canonical raw GitHub URL.
- *
- * Network failures or filesystem failures are silently ignored.
- */
-async function updateSkill(): Promise<void> {
-  debug("pre-check starting workspace", process.cwd());
-  debug("pre-check refreshing workspace SKILL.md from", SKILL_MD_URL);
-  const remoteContent = await downloadText(SKILL_MD_URL);
-  if (!remoteContent) {
-    debug("pre-check SKILL.md download returned empty");
-    return;
-  }
-
-  try {
-    const targetDir = path.dirname(WORKSPACE_SKILL_PATH);
-    const tempPath = `${WORKSPACE_SKILL_PATH}.tmp`;
-    debug("pre-check writing workspace SKILL.md", {
-      target: WORKSPACE_SKILL_PATH,
-      temp: tempPath,
-    });
-    fs.mkdirSync(targetDir, { recursive: true });
-    fs.writeFileSync(tempPath, remoteContent, "utf-8");
-    fs.renameSync(tempPath, WORKSPACE_SKILL_PATH);
-    debug("pre-check workspace SKILL.md refreshed", WORKSPACE_SKILL_PATH);
-  } catch {
-    // Non-critical — the current command can still continue on older bits
-    debug("pre-check workspace SKILL.md refresh failed", WORKSPACE_SKILL_PATH);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Main entry point
-// ---------------------------------------------------------------------------
-
-/**
  * Run the pre-flight update check.
  *
  * Called by cli.ts before dispatching any sub-command. If an update is
@@ -321,17 +215,11 @@ async function updateSkill(): Promise<void> {
  * message (for stderr) and `updated: true`.
  *
  * When `updated` is true the caller should exit and prompt the agent /
- * user to re-run the command (the running binary and SKILL.md are stale).
+ * user to re-run the command because the running CLI binary is stale.
  */
 export async function preCheck(
   argv: string[] = process.argv,
 ): Promise<PreCheckResult> {
-  const toolsMdStatus = readToolsMdStatus();
-  debug("pre-check workspace TOOLS.md", {
-    path: WORKSPACE_TOOLS_PATH,
-    ...toolsMdStatus,
-  });
-
   // --- Gate: skip if last check was recent enough ---
   if (!shouldCheck()) {
     // debug("pre-check skipped because interval not reached");
@@ -362,7 +250,6 @@ export async function preCheck(
   debug("pre-check update required", {
     localVersion,
     remoteVersion,
-    skillPath: WORKSPACE_SKILL_PATH,
   });
   const cliUpdated = updateCli();
   if (!cliUpdated) {
@@ -373,6 +260,9 @@ export async function preCheck(
         "[zcloak-ai] Version update detected, but automatic CLI update failed.",
         `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (not installed)`,
         `[zcloak-ai] Tried: npm install -g ${NPM_PACKAGE_NAME}@latest`,
+        "[zcloak-ai] Skill packages are not updated by pre-check.",
+        "[zcloak-ai] To refresh the zCloak skill, run: npx clawhub@latest install zcloak-ai-agent --force",
+        TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT,
         "[zcloak-ai] Continuing with the current CLI version.",
       ]
         .filter(Boolean)
@@ -380,8 +270,6 @@ export async function preCheck(
     };
   }
 
-  // CLI upgrade succeeded → refresh workspace SKILL.md as best-effort follow-up.
-  await updateSkill();
   recordCheckTime();
 
   return {
@@ -389,9 +277,10 @@ export async function preCheck(
     message: [
       "[zcloak-ai] Version update detected!",
       `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (updated)`,
-      `[zcloak-ai] Workspace SKILL.md target: ${WORKSPACE_SKILL_PATH}`,
-      `[zcloak-ai] if updated, tell the user version changed. and 1.  ${WORKSPACE_SKILL_PATH} maybe not the claw workingspace, you may move the SKILL.md to <claw_workingspace>/skills/zcloak-ai-agent/SKILL.md"; 2. also you must reload the updated SKILL.md and re-run the previous command because of those changes.`,
+      "[zcloak-ai] Skill packages are upgraded separately from the CLI.",
+      "[zcloak-ai] To refresh the zCloak skill, run: npx clawhub@latest install zcloak-ai-agent --force",
       TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT,
+      "[zcloak-ai] Re-run the previous command on the updated CLI.",
     ]
       .filter(Boolean)
       .join("\n"),
