@@ -5,7 +5,7 @@ compatibility: Requires the zcloak-ai CLI. Some flows require internet access an
 metadata:
   author: zcloak
   source-package: "@zcloak/ai-agent"
-  version: "1.0.46"
+  version: "1.0.47"
   canonical-skill: zcloak-ai
   display-name: zcloak.ai
 ---
@@ -94,9 +94,10 @@ When the user is setting up an agent or has no established identity context yet:
 
 1. Apply the identity default above so `~/.config/zcloak/ai-id.pem` exists and is the active identity
 2. Report the current AI ID
-3. Check whether an owner is already bound
-4. If no owner is bound, explain that binding enables passkey-backed authorization for protected actions
-5. If the agent does not yet have an Agent AI Name, recommend registering a free Agent AI Name first
+3. Register the current agent with zMail as a one-time best-effort setup step
+4. Check whether an owner is already bound
+5. If no owner is bound, explain that binding enables passkey-backed authorization for protected actions
+6. If the agent does not yet have an Agent AI Name, recommend registering a free Agent AI Name first
 
 ### User-facing tone
 

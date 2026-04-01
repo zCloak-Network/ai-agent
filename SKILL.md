@@ -1,5 +1,5 @@
 ---
-version: v1.0.46
+version: v1.0.47
 ---
 
 # zCloak.ai SKILL
@@ -91,6 +91,8 @@ Whenever the agent has no owner binding yet, proactively guide the user toward o
 Recommended onboarding behavior:
 - Create or reuse `~/.config/zcloak/ai-id.pem`.
 - Report the current AI ID.
+- Register the current agent with zMail via `zcloak-ai zmail register` as a one-time best-effort setup step.
+- Treat `Already registered with zMail.` as a successful no-op, not an error.
 - Check whether the agent already has an owner binding.
 - If no owner is bound, proactively tell the user that binding an owner enables passkey authorization and protected actions.
 - If the agent does not yet have an Agent AI Name, recommend registering a free Agent AI Name first. Free Agent AI Names include `#`, such as `runner#8939.agent`.
@@ -600,7 +602,6 @@ zcloak-ai vetkey send-msg --to="runner#8939.agent" --text="Hello" --no-zmail
 | ------------------- | ---------------------------------------------------- |
 | `--reply=<msg_id>`  | Reply to a parent message (adds `["reply", id]` tag) |
 | `--no-zmail`        | Disable auto-delivery; only output envelope JSON     |
-| `--zmail-url=<url>` | Override zMail server URL                            |
 
 **Message composition format:** `send-msg` uses **Kind17 content v2**, where the envelope `content` is a JSON object containing AES-GCM body ciphertext plus per-reader wrapped keys.
 
@@ -665,6 +666,10 @@ zcloak-ai vetkey recv-msg --data='{"id":"...","kind":17,...}' --output=./secret.
 
 ### 9.7 zMail Service Integration
 The `zmail` module provides direct interaction with the zMail encrypted mail server. Before sending or receiving messages, agents must register with zMail.
+
+Best-practice behavior:
+- Immediately after an AI ID is created or loaded, proactively run `zcloak-ai zmail register`.
+- If the server replies `Already registered with zMail.`, treat that as success and continue.
 
 All endpoints use **Schnorr BIP-340 ownership proof headers** (`x-zmail-ai-id`, `x-zmail-timestamp`, `x-zmail-nonce`, `x-zmail-signature`) to authenticate requests.
 
@@ -794,4 +799,4 @@ This is an agent-side workflow. The agent performs all steps; the user only need
 6. **Decrypt a message**: `zcloak-ai vetkey recv-msg --msg-id=<msg_id> --json`
 7. **Acknowledge**: `zcloak-ai zmail ack --msg-id=<msg_id>`
 
-> **URL resolution priority**: `--zmail-url` flag > `ZMAIL_URL` environment variable > config default (`https://zmail-api-v2-822734913522.asia-southeast1.run.app`)
+> These commands use the default zMail service endpoint.

@@ -558,13 +558,7 @@ export function runDaemonUds(
       // Emit ready info to stderr
       log.info(`Daemon ready. Socket: ${sockPath}`);
       log.info(`Active derivation ID: ${activeKeyStore.derivationId}`);
-      if (
-        mailKeyStore &&
-        mailKeyStore.derivationId !== activeKeyStore.derivationId
-      ) {
-        log.info(`Mail derivation ID: ${mailKeyStore.derivationId}`);
-      }
-      log.info(`Principal: ${principal}`);
+      
       for (const createTask of taskFactories) {
         try {
           backgroundTasks.push(createTask());

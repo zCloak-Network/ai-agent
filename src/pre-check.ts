@@ -278,7 +278,7 @@ export async function preCheck(
       "[zcloak-ai] Version update detected!",
       `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (updated)`,
       "[zcloak-ai] Skill packages are upgraded separately from the CLI.",
-      "[zcloak-ai] To refresh the zCloak skill, run: npx clawhub@latest install zcloak-ai-agent --force",
+      "[zcloak-ai] Refresh the zCloak ai agent skill: npx clawhub@latest install zcloak-ai-agent --force",
       TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT,
       "[zcloak-ai] Re-run the previous command on the updated CLI.",
     ]

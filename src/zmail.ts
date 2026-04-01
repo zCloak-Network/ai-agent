@@ -498,15 +498,6 @@ export async function syncMailbox(
   const prevState = fullSync ? null : readSyncState(principal);
   const prevInbox = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readInbox(principal);
   const prevSent = fullSync ? { version: 1, synced_at: 0, messages: [] as CachedMessage[] } : readSent(principal);
-  log.debug('zMail sync start', {
-    principal,
-    zmailUrl,
-    fullSync,
-    prevInboxCount: prevInbox.messages.length,
-    prevSentCount: prevSent.messages.length,
-    prevInboxCursor: prevState?.inbox_cursor ?? null,
-    prevSentCursor: prevState?.sent_cursor ?? null,
-  });
 
   if (logProgress) {
     log.info(`Syncing zMail for ${principal}...`);

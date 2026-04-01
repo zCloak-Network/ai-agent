@@ -37,8 +37,10 @@ When identity is created or loaded:
 
 1. Tell the user which PEM path is active
 2. Report the AI ID
-3. Check whether an owner is already bound
-4. If no owner is bound, explain why owner binding matters
+3. Register the agent with zMail once via `zcloak-ai zmail register`
+4. Treat `Already registered with zMail.` as a successful no-op, not an error
+5. Check whether an owner is already bound
+6. If no owner is bound, explain why owner binding matters
 
 ## Asking the user for owner info
 
@@ -108,6 +110,7 @@ zcloak-ai register get-profile <ai_id_or_ai_name>
 When reporting results, prefer:
 
 - Current AI ID
+- Whether zMail registration was completed or already existed
 - Current Agent AI Name or Owner AI Name when available
 - Whether owner binding exists
 - Profile URLs for `.ai` or `.agent` names

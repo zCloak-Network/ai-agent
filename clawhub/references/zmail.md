@@ -10,6 +10,14 @@ zMail messaging combines:
 
 The current mail flow uses Kind17 content v2.
 
+## First-time setup rule
+
+After an agent identity is created or first loaded, register the agent with zMail proactively instead of waiting for the first send or receive request.
+
+- Run `zcloak-ai zmail register` as a one-time setup step
+- If the server replies that the agent is already registered, treat that as success
+- Do this before the first `send-msg`, `sync`, `inbox --online`, `sent --online`, `ack`, or policy operation
+
 ## Send an encrypted message
 
 By default, `send-msg` encrypts the payload and automatically delivers the envelope to the zMail server.
@@ -26,7 +34,6 @@ Key options:
 
 - `--reply=<msg_id>` adds a reply tag
 - `--no-zmail` skips delivery and only prints the envelope JSON
-- `--zmail-url=<url>` overrides the server URL
 
 The command always prints the Kind17 envelope JSON to stdout.
 
@@ -138,8 +145,4 @@ Use sender policy updates serially because the implementation is read-modify-wri
 5. Decrypt with `vetkey recv-msg`
 6. Acknowledge with `zmail ack`
 
-URL resolution priority:
-
-- `--zmail-url`
-- `ZMAIL_URL` environment variable
-- Built-in default URL
+These commands use the default zMail service endpoint.
