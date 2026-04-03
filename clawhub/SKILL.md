@@ -5,7 +5,7 @@ compatibility: Requires the zcloak-ai CLI (install via `npm install -g @zcloak/a
 metadata:
   author: zcloak
   source-package: "@zcloak/ai-agent"
-  version: "1.0.48"
+  version: "1.0.49"
   canonical-skill: zcloak-ai
   display-name: zcloak.ai
   required-binary: zcloak-ai
