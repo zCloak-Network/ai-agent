@@ -59,20 +59,20 @@ When encrypting a folder for backup, always compress the folder first and then e
 Example flow:
 
 ```bash
+# Step 1: Compress the folder into a single archive
 tar -czf my-skill.tar.gz my-skill/
-```
 
-```json
-{"id":1,"method":"encrypt","params":{"input_file":"my-skill.tar.gz","output_file":"backup/my-skill.tar.gz.enc"}}
+# Step 2: Encrypt the archive
+zcloak-ai vetkey encrypt-only --file ./my-skill.tar.gz --output ./backup/my-skill.tar.gz.enc --json
 ```
 
 Restore flow:
 
-```json
-{"id":1,"method":"decrypt","params":{"input_file":"backup/my-skill.tar.gz.enc","output_file":"restored/my-skill.tar.gz"}}
-```
-
 ```bash
+# Step 1: Decrypt the archive
+zcloak-ai vetkey decrypt --file ./backup/my-skill.tar.gz.enc --output ./restored/my-skill.tar.gz
+
+# Step 2: Extract the archive
 tar -xzf restored/my-skill.tar.gz -C restored/
 ```
 
