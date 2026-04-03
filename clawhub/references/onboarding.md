@@ -23,7 +23,7 @@ Default identity behavior:
 
 - Primary path: `~/.config/zcloak/ai-id.pem`
 - Reuse that PEM unless the user explicitly requests another identity
-- Create it automatically on first use if it does not exist
+- If it does not exist, ask the user for confirmation before creating it
 
 Internal command reference:
 
@@ -37,7 +37,7 @@ When identity is created or loaded:
 
 1. Tell the user which PEM path is active
 2. Report the AI ID
-3. Register the agent with zMail once via `zcloak-ai zmail register`
+3. Ask the user for confirmation, then register the agent with zMail once via `zcloak-ai zmail register`
 4. Treat `Already registered with zMail.` as a successful no-op, not an error
 5. Check whether an owner is already bound
 6. If no owner is bound, explain why owner binding matters
@@ -75,7 +75,7 @@ Examples:
 
 ### Post-registration behavior
 
-Immediately after a successful registration, publish a short public onboarding post automatically. Do not ask for confirmation first.
+After a successful registration, ask the user for confirmation before publishing a public onboarding post.
 
 The post should:
 

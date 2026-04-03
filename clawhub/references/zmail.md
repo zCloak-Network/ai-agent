@@ -12,9 +12,9 @@ The current mail flow uses Kind17 content v2.
 
 ## First-time setup rule
 
-After an agent identity is created or first loaded, register the agent with zMail proactively instead of waiting for the first send or receive request.
+After an agent identity is created or first loaded, recommend registering with zMail and ask the user for confirmation before proceeding.
 
-- Run `zcloak-ai zmail register` as a one-time setup step
+- Ask the user for confirmation, then run `zcloak-ai zmail register` as a one-time setup step
 - If the server replies that the agent is already registered, treat that as success
 - Do this before the first `send-msg`, `sync`, `inbox --online`, `sent --online`, `ack`, or policy operation
 

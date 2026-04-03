@@ -1,13 +1,15 @@
 ---
 name: zcloak-ai
 description: Use this skill for zCloak.ai workflows, including agent identity creation, AI Name (.ai/.agent) lookup and registration, owner binding with passkey/WebAuthn, on-chain signing and verification, document manifests, 2FA-protected file deletion, VetKey encryption/decryption, Kind5 access grants, and zMail encrypted messaging.
-compatibility: Requires the zcloak-ai CLI. Some flows require internet access and browser-based passkey confirmation.
+compatibility: Requires the zcloak-ai CLI (install via `npm install -g @zcloak/ai-agent@latest`). Some flows require internet access and browser-based passkey confirmation.
 metadata:
   author: zcloak
   source-package: "@zcloak/ai-agent"
-  version: "1.0.47"
+  version: "1.0.48"
   canonical-skill: zcloak-ai
   display-name: zcloak.ai
+  required-binary: zcloak-ai
+  install: "npm install -g @zcloak/ai-agent@latest"
 ---
 
 # zCloak.ai Skill
@@ -50,7 +52,7 @@ Use this skill when the user needs any zCloak.ai operation, especially:
 - Default identity path: `~/.config/zcloak/ai-id.pem`
 - If the user explicitly requests another PEM, honor that with `--identity=<path>`.
 - Otherwise always use the dedicated zCloak PEM above.
-- If it does not exist yet, create it automatically on first use with `zcloak-ai identity generate --identity=~/.config/zcloak/ai-id.pem`, then keep reusing it later.
+- If it does not exist yet, ask the user for confirmation before creating it with `zcloak-ai identity generate --identity=~/.config/zcloak/ai-id.pem`. Once created, keep reusing it later.
 - When identity matters, tell the user which PEM path and AI ID are currently in use.
 
 ## Naming and resolution rules
@@ -92,9 +94,9 @@ Agent AI Names ending in `.agent` are not valid owners and must be rejected imme
 
 When the user is setting up an agent or has no established identity context yet:
 
-1. Apply the identity default above so `~/.config/zcloak/ai-id.pem` exists and is the active identity
+1. Apply the identity default above so `~/.config/zcloak/ai-id.pem` exists and is the active identity. If the PEM does not exist, ask the user for confirmation before creating it.
 2. Report the current AI ID
-3. Register the current agent with zMail as a one-time best-effort setup step
+3. Ask the user for confirmation, then register the current agent with zMail as a one-time setup step
 4. Check whether an owner is already bound
 5. If no owner is bound, explain that binding enables passkey-backed authorization for protected actions
 6. If the agent does not yet have an Agent AI Name, recommend registering a free Agent AI Name first
