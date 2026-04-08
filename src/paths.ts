@@ -81,3 +81,26 @@ export function lastUpdateCheckPath(): string {
 export function mailboxDir(principal: string): string {
   return join(mailboxesRoot(), principal);
 }
+
+// ============================================================================
+// 2FA Gate
+// ============================================================================
+
+/**
+ * 2FA gate state file, scoped per session to prevent cross-session interference.
+ *
+ * With a sessionId: ~/.config/zcloak/twofa-state-<sanitized>.json
+ * Without (fallback): ~/.config/zcloak/twofa-state.json
+ *
+ * The sessionId is provided by the OpenClaw `before_agent_reply` hook context.
+ * It is sanitized to prevent path traversal — only alphanumerics, hyphens, and
+ * underscores are kept; everything else is replaced with underscores.
+ */
+export function twofaStatePath(sessionId?: string): string {
+  if (!sessionId) {
+    return join(configDir(), 'twofa-state.json');
+  }
+  // Whitelist: keep only safe filename characters to prevent path traversal
+  const safe = sessionId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  return join(configDir(), `twofa-state-${safe}.json`);
+}

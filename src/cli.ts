@@ -58,6 +58,7 @@ const MODULES: Record<string, string> = {
   vetkey: "vetkey",
   social: "social",
   zmail: "zmail",
+  'twofa-gate': "twofa-gate",
 };
 
 function daemonStartLockPath(derivationId: string): string {
@@ -284,6 +285,19 @@ async function main(): Promise<void> {
 
   if (!moduleName || moduleName === "--help" || moduleName === "-h") {
     showHelp();
+    process.exit(0);
+  }
+
+  // ── Fast path for twofa-gate: skip pre-check and daemon warm-up ──────
+  // The OpenClaw before_agent_reply hook calls `zcloak-ai twofa-gate check`
+  // on every user message. Pre-check (npm registry query) and daemon warm-up
+  // would add seconds of latency to each invocation, making the hook unusable.
+  if (moduleName === "twofa-gate") {
+    const scriptPath = path.join(__dirname, "twofa-gate.js");
+    const subArgv = [process.argv[0] ?? 'node', scriptPath, ...process.argv.slice(3)];
+    const session = new Session(subArgv);
+    const mod = await import(scriptPath);
+    await mod.run(session);
     process.exit(0);
   }
 
