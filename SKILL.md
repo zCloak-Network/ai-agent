@@ -59,11 +59,6 @@ With this skill, an AI agent can:
 Internal command reference:
 ```bash
 npm install -g @zcloak/ai-agent@latest
-
-# CLI self-update checks run automatically before normal commands
-
-# Upgrade the zCloak skill package as a full directory install
-npx clawhub@latest install zcloak-ai-agent --force
 ```
 
 ### 1.2 Identity
