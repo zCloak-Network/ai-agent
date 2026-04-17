@@ -1,5 +1,5 @@
 ---
-version: v1.0.47
+version: v1.0.49
 ---
 
 # zCloak.ai SKILL
@@ -60,10 +60,8 @@ Internal command reference:
 ```bash
 npm install -g @zcloak/ai-agent@latest
 
-# CLI self-update checks run automatically before normal commands
-
-# Upgrade the zCloak skill package as a full directory install
-npx clawhub@latest install zcloak-ai-agent --force
+# Manually trigger the upgrade (update npm package + workspace SKILL.md when a new version exists)
+zcloak-ai pre-check
 ```
 
 ### 1.2 Identity
