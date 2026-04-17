@@ -24,7 +24,8 @@ import fs from "fs";
 import path from "path";
 import { execSync, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
-import { debug } from "./log.js";
+import { homedir } from "os";
+import { debug, info } from "./log.js";
 import { configDir as getConfigDir, lastUpdateCheckPath } from "./paths.js";
 
 /** Environment variable set when a new process is spawned after a CLI upgrade */
@@ -99,7 +100,6 @@ function getLocalCliVersion(): string | null {
   try {
     const pkg = JSON.parse(fs.readFileSync(LOCAL_PACKAGE_JSON, "utf-8"));
     const version = pkg.version ?? null;
-    debug("pre-check local CLI version =", version ?? "null");
     return version;
   } catch {
     debug(
@@ -171,14 +171,12 @@ function recordCheckTime(): void {
  */
 function getNpmLatestVersion(): string | null {
   try {
-    debug("pre-check querying npm latest version for", NPM_PACKAGE_NAME);
     const output = execSync(`npm view ${NPM_PACKAGE_NAME} version`, {
       stdio: "pipe",
       timeout: NPM_VIEW_TIMEOUT_MS,
       encoding: "utf-8",
     });
     const version = output.trim() || null;
-    debug("pre-check npm latest version =", version ?? "null");
     return version;
   } catch {
     debug("pre-check npm version query failed");
@@ -192,7 +190,6 @@ function getNpmLatestVersion(): string | null {
  */
 function updateCli(): void {
   try {
-    debug("pre-check updating npm package", NPM_PACKAGE_NAME);
     execSync(`npm install -g ${NPM_PACKAGE_NAME}@latest`, {
       stdio: "pipe", // suppress npm output
       timeout: NPM_INSTALL_TIMEOUT_MS,
@@ -219,6 +216,133 @@ function spawnPostUpgradeCheck(): void {
   debug("pre-check post-upgrade spawn completed");
 }
 
+// ---------------------------------------------------------------------------
+// Post-upgrade: workspace resolution
+// ---------------------------------------------------------------------------
+
+/** OpenClaw config file candidates, in priority order */
+const OPENCLAW_CONFIG_CANDIDATES = [
+  path.join(homedir(), ".openclaw", "openclaw.json"),
+  path.join(homedir(), ".clawdbot", "clawdbot.json"), // legacy
+];
+
+/** Default workspace when no config file is found */
+const DEFAULT_WORKSPACE = path.join(homedir(), ".openclaw", "workspace");
+
+/**
+ * Walk up from cwd looking for an OpenClaw workspace marker.
+ *
+ * OpenClaw workspaces contain a `.clawhub/` or `.clawdhub/` directory
+ * (created by `npx clawhub install`). Inheriting the agent's cwd lets us
+ * find the workspace without reading any config file.
+ *
+ * Returns the workspace root if found, null otherwise.
+ */
+function resolveWorkspaceFromCwd(): string | null {
+  const MARKERS = [".clawhub", ".clawdhub"];
+  let dir = process.cwd();
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    for (const marker of MARKERS) {
+      if (fs.existsSync(path.join(dir, marker))) {
+        debug("post-upgrade workspace resolved from cwd walk", { dir, marker });
+        return dir;
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // reached filesystem root
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Read `agents.defaults.workspace` from an OpenClaw config file.
+ * Returns null if the file is absent, unparseable, or the field is missing.
+ */
+function readWorkspaceFromConfig(configPath: string): string | null {
+  try {
+    const raw = fs.readFileSync(configPath, "utf-8");
+    const json = JSON.parse(raw) as Record<string, unknown>;
+    const agents = json["agents"] as Record<string, unknown> | undefined;
+    const defaults = agents?.["defaults"] as Record<string, unknown> | undefined;
+    const workspace = defaults?.["workspace"];
+    if (typeof workspace === "string" && workspace.length > 0) {
+      debug("post-upgrade workspace resolved from config", { configPath, workspace });
+      return workspace;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the OpenClaw workspace directory.
+ *
+ * Priority:
+ *   1. OPENCLAW_WORKDIR / CLAWHUB_WORKDIR environment variable
+ *   2. ~/.openclaw/openclaw.json  → agents.defaults.workspace
+ *   3. ~/.clawdbot/clawdbot.json  → agents.defaults.workspace  (legacy)
+ *   4. Fallback: ~/.openclaw/workspace
+ */
+export function resolveOpenClawWorkspace(): string {
+  debug("post-upgrade workspace cwd =", process.cwd());
+
+  const envWorkdir =
+    process.env["OPENCLAW_WORKDIR"] ??
+    process.env["CLAWHUB_WORKDIR"] ??
+    process.env["CLAWDHUB_WORKDIR"];
+  if (envWorkdir) {
+    debug("post-upgrade workspace resolved from env", { envWorkdir });
+    return envWorkdir;
+  }
+
+  // 2. Walk up from cwd — inherits the agent process's working directory
+  const cwdWorkspace = resolveWorkspaceFromCwd();
+
+  // 3 & 4. Config files
+  let configWorkspace: string | null = null;
+  for (const configPath of OPENCLAW_CONFIG_CANDIDATES) {
+    configWorkspace = readWorkspaceFromConfig(configPath);
+    if (configWorkspace) break;
+  }
+
+  info(`[zcloak-ai] post-upgrade workspace candidates — cwd-walk: ${cwdWorkspace ?? "not found"} | config: ${configWorkspace ?? "not found"}`);
+
+  if (cwdWorkspace) return cwdWorkspace;
+  if (configWorkspace) return configWorkspace;
+
+  debug("post-upgrade workspace using default fallback", { workspace: DEFAULT_WORKSPACE });
+  return DEFAULT_WORKSPACE;
+}
+
+// ---------------------------------------------------------------------------
+// Post-upgrade steps (stubs — implement one by one)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the latest SKILL.md from GitHub and write it to
+ * <workspace>/skills/zcloak-ai-agent/SKILL.md.
+ * TODO: implement
+ */
+async function refreshSkill(_workspace: string): Promise<void> {
+  // TODO
+}
+
+/**
+ * Append or update the zCloak skill section in <workspace>/TOOLS.md.
+ * TODO: implement
+ */
+async function updateToolsMd(_workspace: string): Promise<void> {
+  // TODO
+}
+
+// ---------------------------------------------------------------------------
+// Post-upgrade entry point
+// ---------------------------------------------------------------------------
+
 /**
  * Run post-upgrade actions using the current (new) CLI version.
  * Called when ZCLOAK_JUST_UPGRADED=1 is detected in the environment.
@@ -226,12 +350,14 @@ function spawnPostUpgradeCheck(): void {
  * Add future post-upgrade steps here — they will always run on the
  * newly installed version, never on stale code.
  */
-function runPostUpgradeActions(): void {
+async function runPostUpgradeActions(): Promise<void> {
   debug("pre-check running post-upgrade actions (new version)");
 
-  // Prompt the agent to refresh TOOLS.md in the openclaw workspace so
-  // the latest SKILL.md pointer is always registered after a CLI upgrade.
-  process.stderr.write(TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT + "\n");
+  const workspace = resolveOpenClawWorkspace();
+  info(`[zcloak-ai] post-upgrade workspace: ${workspace}`);
+
+  await refreshSkill(workspace);
+  await updateToolsMd(workspace);
 
   debug("pre-check post-upgrade actions completed");
 }
@@ -252,7 +378,7 @@ export async function preCheck(
   // --- Post-upgrade path: spawned by old version after npm install ---
   if (process.env[JUST_UPGRADED_ENV] === "1") {
     debug("pre-check detected JUST_UPGRADED env, running post-upgrade actions");
-    runPostUpgradeActions();
+    await runPostUpgradeActions();
     return { updated: false, message: "" };
   }
 

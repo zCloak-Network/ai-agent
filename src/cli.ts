@@ -35,6 +35,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Session } from "./session.js";
 import { preCheck } from "./pre-check.js";
+import { runOnboard } from "./onboard.js";
 import { getPemPath, loadIdentityFromPath } from "./identity.js";
 import { startDaemonBackground, stopAllDaemons } from "./vetkey.js";
 import { isDaemonAlive, runtimeDir, sanitizeDerivationId } from "./daemon.js";
@@ -274,6 +275,11 @@ async function main(): Promise<void> {
 
   if (!moduleName || moduleName === "--help" || moduleName === "-h") {
     showHelp();
+    process.exit(0);
+  }
+
+  if (moduleName === "onboard") {
+    await runOnboard();
     process.exit(0);
   }
 
