@@ -41,7 +41,7 @@ import * as cryptoOps from './crypto.js';
 import { KeyStore } from './key-store.js';
 import { runDaemonUds } from './serve.js';
 import { isDaemonAlive, socketPath, runtimeDir, sanitizeDerivationId } from './daemon.js';
-import { startPeriodicAsyncTask } from './daemon-tasks.js';
+// import { startPeriodicAsyncTask } from './daemon-tasks.js'; // periodic zmail sync disabled
 import { canisterCallError } from './error.js';
 import * as log from './log.js';
 import { generalParseAiIdToRecord, isReadableId } from './aiid.js';
@@ -61,7 +61,7 @@ function resolveDaemonSpawnArgs(pemPath: string): string[] | undefined {
   return undefined;
 }
 
-const ZMAIL_SYNC_TASK_INTERVAL_MS = 2 * 60 * 1000;
+// const ZMAIL_SYNC_TASK_INTERVAL_MS = 2 * 60 * 1000; // periodic zmail sync disabled
 const DAEMON_START_LOCK_TTL_MS = 30_000;
 const DAEMON_READY_WAIT_TIMEOUT_MS = 25_000;
 const DAEMON_READY_POLL_INTERVAL_MS = 250;
@@ -493,36 +493,39 @@ async function cmdServe(session: Session): Promise<void> {
     mailKeyStore = await KeyStore.deriveFromActor(actor, mailDerivationId);
   }
   log.info("Key derivation complete. Starting JSON-RPC daemon...");
-  const { syncMailbox } = await import('./zmail.js');
-  const { notifyOpenClawMainAgentOfNewMail } = await import('./openclaw.js');
-
   await runDaemonUds(
     activeKeyStore,
     mailKeyStore,
     principal,
     daemonId,
     [
-      () => startPeriodicAsyncTask({
-        name: 'zmail-sync',
-        intervalMs: ZMAIL_SYNC_TASK_INTERVAL_MS,
-        task: async () => {
-          const summary = await syncMailbox(session, { fullSync: false, logProgress: false });
-          if (summary.inbox_new > 0) {
-            const notified = await notifyOpenClawMainAgentOfNewMail(summary);
-            if (notified) {
-              log.info(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent (notified openclaw main)`);
-              return;
-            }
-            log.warn(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent (openclaw notify failed)`);
-            return;
-          }
-          if (summary.sent_new > 0) {
-            log.info(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent`);
-            return;
-          }
-          log.debug('Daemon zMail sync complete', summary);
-        },
-      }),
+      // Periodic zMail sync disabled — re-enable by uncommenting the block below.
+      // Requires: import { startPeriodicAsyncTask } from './daemon-tasks.js';
+      //           const ZMAIL_SYNC_TASK_INTERVAL_MS = 2 * 60 * 1000;
+      //           const { syncMailbox } = await import('./zmail.js');
+      //           const { notifyOpenClawMainAgentOfNewMail } = await import('./openclaw.js');
+      //
+      // () => startPeriodicAsyncTask({
+      //   name: 'zmail-sync',
+      //   intervalMs: ZMAIL_SYNC_TASK_INTERVAL_MS,
+      //   task: async () => {
+      //     const summary = await syncMailbox(session, { fullSync: false, logProgress: false });
+      //     if (summary.inbox_new > 0) {
+      //       const notified = await notifyOpenClawMainAgentOfNewMail(summary);
+      //       if (notified) {
+      //         log.info(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent (notified openclaw main)`);
+      //         return;
+      //       }
+      //       log.warn(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent (openclaw notify failed)`);
+      //       return;
+      //     }
+      //     if (summary.sent_new > 0) {
+      //       log.info(`Daemon zMail sync: ${summary.inbox_new} new inbox, ${summary.sent_new} new sent`);
+      //       return;
+      //     }
+      //     log.debug('Daemon zMail sync complete', summary);
+      //   },
+      // }),
     ],
   );
 }

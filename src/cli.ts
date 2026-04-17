@@ -149,7 +149,6 @@ function resolveWarmUpContext(
       pemPath,
       principal: identity.getPrincipal().toText(),
     };
-    log.debug("Daemon warm-up context resolved", context);
     return context;
   } catch (error) {
     log.warn(
@@ -170,9 +169,6 @@ function resolveWarmUpContext(
 }
 
 function warmUpDaemonForCurrentIdentity(argv: string[]): void {
-  log.debug("Daemon warm-up entry", {
-    argv: argv.slice(2),
-  });
   const context = resolveWarmUpContext(argv);
   if (!context) {
     log.debug("Daemon warm-up aborted because context could not be resolved");
@@ -182,9 +178,7 @@ function warmUpDaemonForCurrentIdentity(argv: string[]): void {
   const { pemPath, principal } = context;
 
   if (isDaemonAlive(principal)) {
-    log.debug("Daemon warm-up skipped because daemon is already running", {
-      principal,
-    });
+    log.debug("Daemon warm-up skipped [already running]");
     return;
   }
   if (!tryAcquireDaemonStartLock(principal)) {

@@ -27,29 +27,22 @@ Read `principal_id` from the result. If empty → name doesn't exist. If `princi
 - Separate agent steps from human steps. For failures, explain briefly and retry or ask for minimum input.
 - After identity is created/loaded, always proactively check owner binding and guide the user toward it if missing.
 
-## 1. Setup
+## 1. Quickstart
 
-### 1.1 Install
-```bash
-npm install -g @zcloak/ai-agent@latest
-# Manually trigger upgrade (updates npm package + workspace SKILL.md)
-zcloak-ai pre-check
-```
-
-### 1.2 Identity
-Default PEM: `~/.config/zcloak/ai-id.pem`. Use `--identity=<path>` only if the user explicitly requests another PEM. Create the default PEM automatically if it doesn't exist; keep reusing it.
+Run this batch script once, parse the combined output, then immediately reply to the user. Do NOT pre-fetch any sub-skill files during onboarding.
 
 ```bash
-zcloak-ai identity show --identity=~/.config/zcloak/ai-id.pem
-zcloak-ai identity generate --identity=~/.config/zcloak/ai-id.pem
+time ( command -v zcloak-ai >/dev/null 2>&1 || npm install -g @zcloak/ai-agent@latest \
+&& zcloak-ai identity show --identity=~/.config/zcloak/ai-id.pem 2>/dev/null \
+   || zcloak-ai identity generate --identity=~/.config/zcloak/ai-id.pem \
+&& zcloak-ai zmail register \
+&& zcloak-ai register get-principal )
 ```
 
-**Onboarding checklist** (run automatically, report results):
-1. Create or reuse `~/.config/zcloak/ai-id.pem`; report the AI ID.
-2. Run `zcloak-ai zmail register` (one-time; `Already registered` = success).
-3. Check owner binding. If none → explain passkey auth benefits, guide user to bind.
-4. If no Agent AI Name → recommend registering a free name (e.g. `runner#8939.agent`).
-5. If owner's `.ai` name or AI ID is known → start bind flow. Otherwise ask user to open `https://id.zcloak.ai/setting`.
+Report: AI ID · zMail status · owner binding status.
+- No owner bound → ask for their `.ai` name or AI ID to start binding.
+- No Agent AI Name → recommend registering one (e.g. `runner#8939.agent`).
+- Fetch sub-skill files only when the user confirms the next action.
 
 ---
 
