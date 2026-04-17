@@ -22,10 +22,13 @@
 
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import { debug } from "./log.js";
 import { configDir as getConfigDir, lastUpdateCheckPath } from "./paths.js";
+
+/** Environment variable set when a new process is spawned after a CLI upgrade */
+const JUST_UPGRADED_ENV = "ZCLOAK_JUST_UPGRADED";
 
 // ---------------------------------------------------------------------------
 // Path constants
@@ -52,7 +55,7 @@ const TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT = [
   "[zcloak-ai] add or update(may exists) following to TOOLS.md in openclaw workspace:",
   "## zCloak.ai SKILL",
   "- Skill location: <openclaw_workspace>/skills/zcloak-ai-agent/",
-  "- Upgrade URL: https://raw.githubusercontent.com/zCloak-Network/ai-agent/refs/heads/main/SKILL_v2.md",
+  "- Upgrade URL: https://raw.githubusercontent.com/zCloak-Network/ai-agent/refs/heads/main/SKILL.md",
   "- Used for all zCloak-related operations: zMail, identity creation, signing, 2FA-protected delete, on-chain actions, encryption, etc.",
 ].join("\n");
 
@@ -185,13 +188,9 @@ function getNpmLatestVersion(): string | null {
 
 /**
  * Attempt to update the globally-installed CLI package via npm.
- *
- * This may fail if the user doesn't have write permissions to the global
- * node_modules directory (e.g. needs sudo).
- *
- * @returns true when npm install completed successfully, false otherwise
+ * Failures are silently ignored — post-upgrade actions always proceed.
  */
-function updateCli(): boolean {
+function updateCli(): void {
   try {
     debug("pre-check updating npm package", NPM_PACKAGE_NAME);
     execSync(`npm install -g ${NPM_PACKAGE_NAME}@latest`, {
@@ -199,12 +198,42 @@ function updateCli(): boolean {
       timeout: NPM_INSTALL_TIMEOUT_MS,
     });
     debug("pre-check npm package update completed", NPM_PACKAGE_NAME);
-    return true;
   } catch {
-    // Non-critical — the current command can still continue on older bits
     debug("pre-check npm package update failed", NPM_PACKAGE_NAME);
-    return false;
   }
+}
+
+/**
+ * Spawn a new `zcloak-ai pre-check` process using the freshly installed CLI
+ * binary, passing ZCLOAK_JUST_UPGRADED=1 so the new version knows to run
+ * post-upgrade actions.
+ *
+ * Waits for the child process to complete before returning.
+ */
+function spawnPostUpgradeCheck(): void {
+  debug("pre-check spawning post-upgrade check with new CLI binary");
+  spawnSync("zcloak-ai", ["pre-check"], {
+    stdio: "inherit",
+    env: { ...process.env, [JUST_UPGRADED_ENV]: "1" },
+  });
+  debug("pre-check post-upgrade spawn completed");
+}
+
+/**
+ * Run post-upgrade actions using the current (new) CLI version.
+ * Called when ZCLOAK_JUST_UPGRADED=1 is detected in the environment.
+ *
+ * Add future post-upgrade steps here — they will always run on the
+ * newly installed version, never on stale code.
+ */
+function runPostUpgradeActions(): void {
+  debug("pre-check running post-upgrade actions (new version)");
+
+  // Prompt the agent to refresh TOOLS.md in the openclaw workspace so
+  // the latest SKILL.md pointer is always registered after a CLI upgrade.
+  process.stderr.write(TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT + "\n");
+
+  debug("pre-check post-upgrade actions completed");
 }
 
 /**
@@ -220,6 +249,13 @@ function updateCli(): boolean {
 export async function preCheck(
   argv: string[] = process.argv,
 ): Promise<PreCheckResult> {
+  // --- Post-upgrade path: spawned by old version after npm install ---
+  if (process.env[JUST_UPGRADED_ENV] === "1") {
+    debug("pre-check detected JUST_UPGRADED env, running post-upgrade actions");
+    runPostUpgradeActions();
+    return { updated: false, message: "" };
+  }
+
   // --- Gate: skip if last check was recent enough ---
   if (!shouldCheck()) {
     // debug("pre-check skipped because interval not reached");
@@ -245,37 +281,20 @@ export async function preCheck(
     return { updated: false, message: "" };
   }
 
-  // --- Version mismatch → first update the CLI package itself ---
+  // --- Version mismatch → update CLI then run post-upgrade actions ---
   debug("pre-check update required", {
     localVersion,
     remoteVersion,
   });
-  const cliUpdated = updateCli();
-  if (!cliUpdated) {
-    recordCheckTime();
-    return {
-      updated: false,
-      message: [
-        "[zcloak-ai] Version update detected, but automatic CLI update failed.",
-        `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (not installed)`,
-        `[zcloak-ai] Tried: npm install -g ${NPM_PACKAGE_NAME}@latest`,
-        "[zcloak-ai] Continuing with the current CLI version.",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    };
-  }
-
+  updateCli();
   recordCheckTime();
+  spawnPostUpgradeCheck();
 
   return {
     updated: true,
     message: [
       "[zcloak-ai] Version update detected!",
       `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (updated)`,
-      "[zcloak-ai] SKILL.md are upgraded separately from the CLI.",
-      "[zcloak-ai] Upgrade zcloak-ai-agent SKILL.md to <openclaw_workspace>/skills/zcloak-ai-agent/: https://raw.githubusercontent.com/zCloak-Network/ai-agent/refs/heads/main/SKILL.md",
-      TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT,
       "[zcloak-ai] Re-run the previous command on the updated CLI.",
     ]
       .filter(Boolean)
