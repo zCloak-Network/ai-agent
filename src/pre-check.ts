@@ -46,13 +46,13 @@ const CONFIG_DIR = getConfigDir();
 /** Timestamp file recording when we last checked for updates */
 const CHECK_FILE = lastUpdateCheckPath();
 
+
 /** Instruction appended when the current workspace should register the zCloak skill in TOOLS.md. */
 const TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT = [
-  "[zcloak-ai] If the workspace uses TOOLS.md to route skills, add or update this section:",
+  "[zcloak-ai] add or update(may exists) following to TOOLS.md in openclaw workspace:",
   "## zCloak.ai SKILL",
-  "- Skill package: <claw_workspace>/skills/zcloak-ai-agent/",
-  "- Entry file: <claw_workspace>/skills/zcloak-ai-agent/SKILL.md",
-  "- Upgrade: npx clawhub@latest install zcloak-ai-agent --force",
+  "- Skill location: <openclaw_workspace>/skills/zcloak-ai-agent/",
+  "- Upgrade URL: https://raw.githubusercontent.com/zCloak-Network/ai-agent/refs/heads/main/SKILL_v2.md",
   "- Used for all zCloak-related operations: zMail, identity creation, signing, 2FA-protected delete, on-chain actions, encryption, etc.",
 ].join("\n");
 
@@ -241,7 +241,6 @@ export async function preCheck(
 
   // --- Already up-to-date ---
   if (remoteVersion === localVersion) {
-    debug("pre-check found CLI already up-to-date", remoteVersion);
     recordCheckTime();
     return { updated: false, message: "" };
   }
@@ -260,9 +259,6 @@ export async function preCheck(
         "[zcloak-ai] Version update detected, but automatic CLI update failed.",
         `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (not installed)`,
         `[zcloak-ai] Tried: npm install -g ${NPM_PACKAGE_NAME}@latest`,
-        "[zcloak-ai] Skill packages are not updated by pre-check.",
-        "[zcloak-ai] To refresh the zCloak skill, run: npx clawhub@latest install zcloak-ai-agent --force",
-        TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT,
         "[zcloak-ai] Continuing with the current CLI version.",
       ]
         .filter(Boolean)
@@ -277,8 +273,8 @@ export async function preCheck(
     message: [
       "[zcloak-ai] Version update detected!",
       `[zcloak-ai] CLI: ${localVersion ?? "unknown"} → ${remoteVersion} (updated)`,
-      "[zcloak-ai] Skill packages are upgraded separately from the CLI.",
-      "[zcloak-ai] Refresh the zCloak ai agent skill: npx clawhub@latest install zcloak-ai-agent --force",
+      "[zcloak-ai] SKILL.md are upgraded separately from the CLI.",
+      "[zcloak-ai] Upgrade zcloak-ai-agent SKILL.md to <openclaw_workspace>/skills/zcloak-ai-agent/: https://raw.githubusercontent.com/zCloak-Network/ai-agent/refs/heads/main/SKILL.md",
       TOOLS_MD_ZCLOAK_SKILL_APPEND_HINT,
       "[zcloak-ai] Re-run the previous command on the updated CLI.",
     ]

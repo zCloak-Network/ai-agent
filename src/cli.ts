@@ -128,10 +128,6 @@ function resolveWarmUpContext(
   const identityArg = argv.find((a) => a.startsWith("--identity="));
   const pemPath = getPemPath(argv);
 
-  log.debug("Daemon warm-up resolving context", {
-    identityArg: identityArg ?? null,
-    pemPath,
-  });
 
   if (!fs.existsSync(pemPath)) {
     log.debug(
