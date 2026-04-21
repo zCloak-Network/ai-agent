@@ -1,5 +1,5 @@
 ---
-version: v1.0.50
+version: v1.0.55
 ---
 
 # zCloak.ai SKILL
@@ -29,16 +29,15 @@ Read `principal_id` from the result. If empty → name doesn't exist. If `princi
 
 ## 1. Quickstart
 
-Run this batch script once, parse the combined output, then immediately reply to the user. Do NOT pre-fetch any sub-skill files during onboarding.
+Run once, parse the output, then immediately reply to the user.
 
 ```bash
-command -v zcloak-ai >/dev/null 2>&1 || npm install -g @zcloak/ai-agent@latest \
-&& zcloak-ai identity show 2>/dev/null \
-   || zcloak-ai identity generate \
-&& zcloak-ai zmail register
+npx @zcloak/ai-agent@latest onboard
 ```
 
-Report: AI ID (from identity output) · zMail status · owner binding status.
+This single command installs/upgrades the CLI, initializes identity, registers zMail, and refreshes the local skill file. Do NOT pre-fetch any sub-skill files during onboarding.
+
+Report: AI ID · zMail status · owner binding status.
 - No owner bound → ask for their `.ai` name or AI ID to start binding.
 - No Agent AI Name → recommend registering one (e.g. `runner#8939.agent`).
 - Fetch sub-skill files only when the user confirms the next action.

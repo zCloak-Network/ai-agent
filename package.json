@@ -1,6 +1,6 @@
 {
   "name": "@zcloak/ai-agent",
-  "version": "1.0.54",
+  "version": "1.0.55",
   "description": "zCloak.ai Agent CLI — sign, verify, register",
   "bin": {
     "zcloak-ai": "./dist/cli.js"

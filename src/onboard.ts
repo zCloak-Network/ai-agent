@@ -16,7 +16,8 @@ import { createHash } from "crypto";
 import { schnorr } from "@noble/curves/secp256k1";
 import { bytesToHex } from "@noble/hashes/utils";
 import * as log from "./log.js";
-import { resolveOpenClawWorkspace, refreshSkill, updateToolsMd } from "./pre-check.js";
+import { resolveOpenClawWorkspace } from "./workspace.js";
+import { refreshSkill, updateToolsMd } from "./pre-check.js";
 import { ensureIdentityFile, loadIdentityFromPath, DEFAULT_PEM_PATH } from "./identity.js";
 import { schnorrPubkeyFromSpki } from "./vetkey.js";
 import config from "./config.js";
@@ -25,8 +26,8 @@ import config from "./config.js";
 // Step 4 — Initialize identity
 // ---------------------------------------------------------------------------
 
-/** Load existing identity or generate a new one. Returns the PEM path. */
-async function initIdentity(): Promise<string> {
+/** Load existing identity or generate a new one. Returns pemPath and principal. */
+async function initIdentity(): Promise<{ pemPath: string; principal: string }> {
   const { path: pemPath, created } = ensureIdentityFile(DEFAULT_PEM_PATH);
   const identity = loadIdentityFromPath(pemPath);
   const principal = identity.getPrincipal().toText();
@@ -35,15 +36,15 @@ async function initIdentity(): Promise<string> {
   } else {
     log.info(`[zcloak-ai] onboard [4/5] identity loaded: ${principal}`);
   }
-  return pemPath;
+  return { pemPath, principal };
 }
 
 // ---------------------------------------------------------------------------
 // Step 5 — Register with zMail
 // ---------------------------------------------------------------------------
 
-/** Register this agent with the zMail server. No-op if already registered. */
-async function registerZmail(pemPath: string): Promise<void> {
+/** Register this agent with the zMail server. Returns zMail status string. */
+async function registerZmail(pemPath: string): Promise<string> {
   const identity = loadIdentityFromPath(pemPath);
   const principal = identity.getPrincipal().toText();
   const spkiHex = Buffer.from(identity.getPublicKey().toDer()).toString("hex");
@@ -64,8 +65,10 @@ async function registerZmail(pemPath: string): Promise<void> {
 
   if (res.status === 201) {
     log.info(`[zcloak-ai] onboard [5/5] zMail registered: ${principal}`);
+    return "registered";
   } else if (res.status === 409) {
     log.info(`[zcloak-ai] onboard [5/5] zMail already registered`);
+    return "already registered";
   } else {
     const body = await res.json() as Record<string, unknown>;
     throw new Error(`zMail registration failed: ${String(body["error"] ?? `HTTP ${res.status}`)}`);
@@ -84,8 +87,24 @@ export async function runOnboard(): Promise<void> {
   await refreshSkill(workspace);
   await updateToolsMd(workspace);
 
-  const pemPath = await initIdentity();
-  await registerZmail(pemPath);
+  const { pemPath, principal } = await initIdentity();
+  const zmailStatus = await registerZmail(pemPath);
 
   log.info("[zcloak-ai] onboard complete.");
+
+  // Print structured summary to stdout so the agent knows exactly what to do next.
+  console.log([
+    "",
+    "=== zCloak.ai Onboard Complete ===",
+    `AI ID:   ${principal}`,
+    `zMail:   ${zmailStatus}`,
+    `Skill:   ${workspace}/skills/zcloak-ai-agent/SKILL.md`,
+    "",
+    "Next steps for agent:",
+    "1. Check owner binding: zcloak-ai register get-owner",
+    "   - No owner bound → ask user for their .ai name or AI ID to start binding.",
+    "2. Check Agent AI Name: zcloak-ai register lookup --ai-id=" + principal,
+    "   - No Agent AI Name → recommend registering one (e.g. runner#8939.agent).",
+    "",
+  ].join("\n"));
 }

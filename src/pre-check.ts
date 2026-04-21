@@ -26,6 +26,7 @@ import { execSync, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import { debug, info } from "./log.js";
 import { configDir as getConfigDir, lastUpdateCheckPath } from "./paths.js";
+import { resolveOpenClawWorkspace } from "./workspace.js";
 
 /** Environment variable set when a new process is spawned after a CLI upgrade */
 const JUST_UPGRADED_ENV = "ZCLOAK_JUST_UPGRADED";
@@ -220,65 +221,19 @@ const TOOLS_MD_SECTION = [
   "- Used for all zCloak-related operations: zMail, identity creation, signing, 2FA-protected delete, on-chain actions, encryption, etc.",
 ].join("\n");
 
-/** Returns the OpenClaw workspace — inherited cwd from the agent process. */
-export function resolveOpenClawWorkspace(): string {
-  const workspace = process.cwd();
-  info(`[zcloak-ai] workspace: ${workspace}`);
-  return workspace;
-}
-
-// ---------------------------------------------------------------------------
-// Reserved: config-file / cwd-walk workspace resolution (may be needed later)
-// ---------------------------------------------------------------------------
-// const OPENCLAW_CONFIG_CANDIDATES = [
-//   path.join(homedir(), ".openclaw", "openclaw.json"),
-//   path.join(homedir(), ".clawdbot", "clawdbot.json"), // legacy
-// ];
-// const DEFAULT_WORKSPACE = path.join(homedir(), ".openclaw", "workspace");
-//
-// function readWorkspaceFromConfig(configPath: string): string | null {
-//   try {
-//     const raw = fs.readFileSync(configPath, "utf-8");
-//     const json = JSON.parse(raw) as Record<string, unknown>;
-//     const agents = json["agents"] as Record<string, unknown> | undefined;
-//     const defaults = agents?.["defaults"] as Record<string, unknown> | undefined;
-//     const workspace = defaults?.["workspace"];
-//     if (typeof workspace === "string" && workspace.length > 0) return workspace;
-//     return null;
-//   } catch { return null; }
-// }
-//
-// function resolveWorkspaceFromCwd(): string | null {
-//   const MARKERS = [".clawhub", ".clawdhub"];
-//   let dir = process.cwd();
-//   while (true) {
-//     for (const marker of MARKERS) {
-//       if (fs.existsSync(path.join(dir, marker))) return dir;
-//     }
-//     const parent = path.dirname(dir);
-//     if (parent === dir) break;
-//     dir = parent;
-//   }
-//   return null;
-// }
-//
-// Full priority chain when process.cwd() is not sufficient:
-//   1. OPENCLAW_WORKDIR / CLAWHUB_WORKDIR env var
-//   2. resolveWorkspaceFromCwd()  — walk up from cwd looking for .clawhub/
-//   3. readWorkspaceFromConfig()  — ~/.openclaw/openclaw.json → agents.defaults.workspace
-//   4. readWorkspaceFromConfig()  — ~/.clawdbot/clawdbot.json (legacy)
-//   5. DEFAULT_WORKSPACE          — ~/.openclaw/workspace
+export { resolveOpenClawWorkspace };
 
 /** Fetch latest SKILL.md from GitHub and write to <workspace>/skills/zcloak-ai-agent/SKILL.md. */
 export async function refreshSkill(workspace: string): Promise<void> {
   const targetDir = path.join(workspace, "skills", "zcloak-ai-agent");
   const targetFile = path.join(targetDir, "SKILL.md");
+  debug("post-upgrade refreshSkill fetching", SKILL_REMOTE_URL);
   const res = await fetch(SKILL_REMOTE_URL);
   if (!res.ok) throw new Error(`Failed to fetch SKILL.md: ${res.status}`);
   const content = await res.text();
   fs.mkdirSync(targetDir, { recursive: true });
   fs.writeFileSync(targetFile, content, "utf-8");
-  info(`[zcloak-ai] SKILL.md → ${targetFile}`);
+  info(`[zcloak-ai] SKILL.md written (${content.length} bytes) → ${targetFile}`);
 }
 
 /** Add or update the zCloak.ai SKILL section in <workspace>/TOOLS.md. */
@@ -287,12 +242,13 @@ export async function updateToolsMd(workspace: string): Promise<void> {
   let existing = "";
   try { existing = fs.readFileSync(toolsPath, "utf-8"); } catch { /* not yet created */ }
 
-  const updated = existing.includes("## zCloak.ai SKILL")
+  const hadSection = existing.includes("## zCloak.ai SKILL");
+  const updated = hadSection
     ? existing.replace(/## zCloak\.ai SKILL[\s\S]*?(?=\n## |\s*$)/, TOOLS_MD_SECTION)
     : (existing ? `${existing.trimEnd()}\n\n${TOOLS_MD_SECTION}\n` : `${TOOLS_MD_SECTION}\n`);
 
   fs.writeFileSync(toolsPath, updated, "utf-8");
-  info(`[zcloak-ai] TOOLS.md → ${toolsPath}`);
+  info(`[zcloak-ai] TOOLS.md ${hadSection ? "updated" : "created"} → ${toolsPath}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -307,15 +263,16 @@ export async function updateToolsMd(workspace: string): Promise<void> {
  * newly installed version, never on stale code.
  */
 async function runPostUpgradeActions(): Promise<void> {
-  debug("pre-check running post-upgrade actions (new version)");
-
+  info("[zcloak-ai] post-upgrade [1/3] workspace: resolving...");
   const workspace = resolveOpenClawWorkspace();
-  info(`[zcloak-ai] post-upgrade workspace: ${workspace}`);
 
-  try { await refreshSkill(workspace); } catch (e) { debug("post-upgrade refreshSkill failed", e); }
-  try { await updateToolsMd(workspace); } catch (e) { debug("post-upgrade updateToolsMd failed", e); }
+  info("[zcloak-ai] post-upgrade [2/3] SKILL.md: refreshing...");
+  try { await refreshSkill(workspace); } catch (e) { info(`[zcloak-ai] post-upgrade [2/3] SKILL.md: failed — ${e instanceof Error ? e.message : String(e)}`); }
 
-  debug("pre-check post-upgrade actions completed");
+  info("[zcloak-ai] post-upgrade [3/3] TOOLS.md: updating...");
+  try { await updateToolsMd(workspace); } catch (e) { info(`[zcloak-ai] post-upgrade [3/3] TOOLS.md: failed — ${e instanceof Error ? e.message : String(e)}`); }
+
+  info("[zcloak-ai] post-upgrade done.");
 }
 
 /**
